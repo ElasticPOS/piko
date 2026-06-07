@@ -1,0 +1,8 @@
+# flyctl launch added from .gitignore
+**/piko
+!**/piko
+
+**/bin
+
+**/coverage.out
+fly.toml

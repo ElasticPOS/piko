@@ -4,3 +4,4 @@ piko
 bin/
 
 coverage.out
+.idea/

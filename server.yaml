@@ -1,0 +1,46 @@
+# Piko server configuration for Fly.io cluster deployment
+# Environment variables are expanded when using --config.expand-env
+
+proxy:
+  bind_addr: ':8000'
+  advertise_addr: '[${FLY_PRIVATE_IP}]:8000'
+  timeout: 30s
+  access_log:
+    level: info
+    disable: false
+  http:
+    read_timeout: 10s
+    read_header_timeout: 10s
+    write_timeout: 10s
+    idle_timeout: 5m
+    max_header_bytes: 1048576
+
+upstream:
+  bind_addr: ':8001'
+  advertise_addr: '[${FLY_PRIVATE_IP}]:8001'
+  rebalance:
+    threshold: 0.2
+    shed_rate: 0.005
+    min_conns: 50
+
+admin:
+  bind_addr: ':8002'
+  advertise_addr: '[${FLY_PRIVATE_IP}]:8002'
+
+cluster:
+  # Node ID will be set via command line flag using FLY_MACHINE_ID
+  # Use Fly.io internal DNS which resolves to IPv6 addresses
+  join:
+    - '${FLY_APP_NAME}.internal'
+  join_timeout: 1m
+  abort_if_join_fails: false
+  gossip:
+    bind_addr: ':8003'
+    advertise_addr: '[${FLY_PRIVATE_IP}]:8003'
+    interval: 100ms
+    max_packet_size: 1400
+
+log:
+  level: '${LOG_LEVEL:info}'
+
+grace_period: 1m
