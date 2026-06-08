@@ -116,6 +116,8 @@ func (s *Server) SetReady(ready bool) {
 }
 
 func (s *Server) registerRoutes(router *gin.Engine) {
+	s.registerWeb(router)
+
 	router.GET("/health", s.healthRoute)
 	router.GET("/ready", s.readyRoute)
 
