@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Piko Admin</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --panel: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --red: #f85149;
+      --yellow: #d29922;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+    header .meta { color: var(--muted); font-size: 12px; }
+    main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+    .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+    .card {
+      flex: 1; min-width: 140px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+    .card .value { font-size: 28px; font-weight: 600; margin-top: 4px; }
+    section { margin-bottom: 32px; }
+    section h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+    tr:last-child td { border-bottom: none; }
+    td.mono, th.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badge.active { background: rgba(63,185,80,.15); color: var(--green); }
+    .badge.down, .badge.left { background: rgba(248,81,73,.15); color: var(--red); }
+    .badge.other { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .empty { color: var(--muted); padding: 14px; }
+    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .dot.ok { background: var(--green); }
+    .dot.err { background: var(--red); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .links { display: flex; gap: 16px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Piko Admin</h1>
+      <div class="links">
+        <a href="metrics" target="_blank">metrics</a>
+        <a href="status/cluster/nodes" target="_blank">cluster API</a>
+        <a href="status/upstream/endpoints" target="_blank">endpoints API</a>
+      </div>
+    </div>
+    <div class="meta">
+      <span id="health"><span class="dot err"></span>connecting…</span>
+      <div id="updated"></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="cards">
+      <div class="card"><div class="label">Nodes</div><div class="value" id="stat-nodes">–</div></div>
+      <div class="card"><div class="label">Active endpoints</div><div class="value" id="stat-endpoints">–</div></div>
+      <div class="card"><div class="label">Upstreams</div><div class="value" id="stat-upstreams">–</div></div>
+    </div>
+
+    <section>
+      <h2>Cluster nodes</h2>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>Status</th><th class="mono">Proxy addr</th><th class="mono">Admin addr</th><th>Endpoints</th><th>Upstreams</th></tr>
+        </thead>
+        <tbody id="nodes-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Local endpoints</h2>
+      <table>
+        <thead><tr><th>Endpoint ID</th><th>Listeners</th></tr></thead>
+        <tbody id="endpoints-body"><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    // Resolve paths relative to where the panel is served so it works behind
+    // a path prefix / reverse proxy.
+    const base = location.pathname.replace(/[^/]*$/, "");
+    const api = (p) => base + p;
+
+    async function getJSON(path) {
+      const res = await fetch(api(path), { headers: { "Accept": "application/json" } });
+      if (!res.ok) throw new Error(path + ": " + res.status);
+      return res.json();
+    }
+
+    function statusBadge(status) {
+      const s = String(status || "").toLowerCase();
+      const cls = s === "active" ? "active" : (s === "down" || s === "left") ? "down" : "other";
+      return `<span class="badge ${cls}">${status || "unknown"}</span>`;
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    async function refresh() {
+      // Health first so the indicator updates even if status calls fail.
+      try {
+        const h = await fetch(api("health"));
+        document.getElementById("health").innerHTML =
+          `<span class="dot ${h.ok ? "ok" : "err"}"></span>${h.ok ? "healthy" : "unhealthy"}`;
+      } catch {
+        document.getElementById("health").innerHTML = `<span class="dot err"></span>unreachable`;
+      }
+
+      try {
+        const nodes = await getJSON("status/cluster/nodes");
+        const tbody = document.getElementById("nodes-body");
+        if (!nodes.length) {
+          tbody.innerHTML = `<tr><td colspan="6" class="empty">No nodes</td></tr>`;
+        } else {
+          tbody.innerHTML = nodes.map((n) => `
+            <tr>
+              <td class="mono">${esc(n.id)}</td>
+              <td>${statusBadge(n.status)}</td>
+              <td class="mono">${esc(n.proxy_addr || "–")}</td>
+              <td class="mono">${esc(n.admin_addr || "–")}</td>
+              <td>${n.endpoints ?? 0}</td>
+              <td>${n.upstreams ?? 0}</td>
+            </tr>`).join("");
+        }
+        document.getElementById("stat-nodes").textContent = nodes.length;
+        document.getElementById("stat-upstreams").textContent =
+          nodes.reduce((a, n) => a + (n.upstreams || 0), 0);
+      } catch (e) {
+        document.getElementById("nodes-body").innerHTML =
+          `<tr><td colspan="6" class="empty">Failed to load nodes (${esc(e.message)})</td></tr>`;
+      }
+
+      try {
+        const endpoints = await getJSON("status/upstream/endpoints");
+        const ids = Object.keys(endpoints);
+        const tbody = document.getElementById("endpoints-body");
+        if (!ids.length) {
+          tbody.innerHTML = `<tr><td colspan="2" class="empty">No active endpoints</td></tr>`;
+        } else {
+          tbody.innerHTML = ids.sort().map((id) => `
+            <tr><td class="mono">${esc(id)}</td><td>${endpoints[id]}</td></tr>`).join("");
+        }
+        document.getElementById("stat-endpoints").textContent = ids.length;
+      } catch (e) {
+        document.getElementById("endpoints-body").innerHTML =
+          `<tr><td colspan="2" class="empty">Failed to load endpoints (${esc(e.message)})</td></tr>`;
+      }
+
+      document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

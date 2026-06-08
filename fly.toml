@@ -60,8 +60,8 @@ primary_region = 'fra'
     hard_limit = 10000
     soft_limit = 8000
 
-# Admin port (8002) - metrics, health checks, status API
-# Exposed publicly for monitoring dashboards (Prometheus, Grafana)
+# Admin port (8002) - web panel, metrics, health checks, status API
+# Exposed publicly for the admin web panel and monitoring (Prometheus, Grafana)
 [[services]]
   protocol = 'tcp'
   internal_port = 8002
@@ -99,8 +99,9 @@ primary_region = 'fra'
 # 2. Scale to 3 nodes: fly scale count 3
 # 3. View logs: fly logs
 # 4. Access admin panel: https://piko-fragrant-voice-7319.fly.dev:8002/
-#    - /health - Health check
-#    - /ready - Readiness check
-#    - /metrics - Prometheus metrics
-#    - /status/* - Status API
+#    - /            - Web panel (cluster nodes, endpoints, status)
+#    - /health      - Health check
+#    - /ready       - Readiness check
+#    - /metrics     - Prometheus metrics
+#    - /status/*    - Status API
 #    - /debug/pprof/* - Go profiling
