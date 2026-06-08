@@ -56,15 +56,19 @@ func (f *Forwarder) Wait() error {
 	return err
 }
 
-// Close closes the listener and all active connections.
+// Close stops the forwarder and closes the underlying connection to the Piko
+// server, tearing down all connections multiplexed over it.
 func (f *Forwarder) Close() error {
-	// Close the listener to stop accepting connections. This will also close
-	// all active connections since the stream to the Piko server is closed.
-	return f.ln.Close()
+	// Shutdown (not Close): Close only sends GoAway, leaving the underlying
+	// yamux session open with nothing left to close it — a leak. Shutdown
+	// closes the session and its connection.
+	return f.ln.Shutdown()
 }
 
 func (f *Forwarder) accept() error {
-	defer f.ln.Close()
+	// Shutdown (not Close) so the underlying yamux session/connection is
+	// actually released when the accept loop exits; Close only sends GoAway.
+	defer f.ln.Shutdown()
 
 	for {
 		conn, err := f.ln.AcceptWithContext(f.ctx)

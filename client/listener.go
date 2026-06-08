@@ -135,6 +135,12 @@ func (l *listener) connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Close the previous session before replacing it. On reconnect the old
+	// session's underlying connection would otherwise be abandoned, leaking its
+	// websocket plus yamux recv/send goroutines until GC (if ever).
+	if l.sess != nil {
+		_ = l.sess.Close()
+	}
 	l.sess = sess
 	return nil
 }
