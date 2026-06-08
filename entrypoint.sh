@@ -45,11 +45,18 @@ if [ -n "$ADVERTISE_IP" ]; then
     esac
 fi
 
-echo "Starting Piko server..."
-echo "  Node ID prefix: ${FLY_MACHINE_ID:-local}-"
-echo "  Advertise IP: $ADVERTISE_IP"
+# JWT auth on the upstream port (8001) so only clients holding a valid license
+# token can register/claim endpoints (prevents endpoint hijacking on the
+# tunnel). keytana signs licenses with RS256, so verify with keytana's RSA
+# PUBLIC key — an HMAC secret cannot verify an asymmetric (RSA) license and
+# would reject every token. The desktop sends its license JWT as the upstream
+# token; the token's piko.endpoints claim bounds which endpoints it may
+# register. Set via: fly secrets set KEYTANA_PUBLIC_KEY="$(cat public.pem)"
+# When unset, auth stays disabled so the server still boots.
 
-exec app server \
+# Build the argument list with `set --` so the multi-line PEM survives as a
+# single argument; the old unquoted "$AUTH_ARGS" word-splitting would mangle it.
+set -- server \
     --cluster.node-id-prefix "${FLY_MACHINE_ID:-local}-" \
     --proxy.bind-addr ":8000" \
     --proxy.advertise-addr "${ADVERTISE_IP}:8000" \
@@ -60,5 +67,21 @@ exec app server \
     --cluster.gossip.bind-addr ":8003" \
     --cluster.gossip.advertise-addr "${ADVERTISE_IP}:8003" \
     --cluster.abort-if-join-fails=false \
-    --log.level "${LOG_LEVEL:-info}" \
-    $CLUSTER_ARGS
+    --log.level "${LOG_LEVEL:-info}"
+
+if [ -n "$CLUSTER_ARGS" ]; then
+    set -- "$@" "$CLUSTER_ARGS"
+fi
+
+if [ -n "$KEYTANA_PUBLIC_KEY" ]; then
+    echo "Upstream JWT auth: ENABLED (RSA)"
+    set -- "$@" --upstream.auth.rsa-public-key="${KEYTANA_PUBLIC_KEY}"
+else
+    echo "Upstream JWT auth: DISABLED (KEYTANA_PUBLIC_KEY not set)"
+fi
+
+echo "Starting Piko server..."
+echo "  Node ID prefix: ${FLY_MACHINE_ID:-local}-"
+echo "  Advertise IP: $ADVERTISE_IP"
+
+exec app "$@"
