@@ -350,6 +350,141 @@ func TestJWTVerifier_DisableDisconnectOnExpiry(t *testing.T) {
 	assert.True(t, parsedToken.Expiry.IsZero())
 }
 
+func TestJWTVerifier_RequireEndpoints(t *testing.T) {
+	secretKey := generateTestHSKey(t)
+
+	sign := func(t *testing.T, claims JWTClaims) string {
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secretKey))
+		require.NoError(t, err)
+		return tokenString
+	}
+
+	t.Run("rejects token with no endpoints", func(t *testing.T) {
+		tokenString := sign(t, JWTClaims{})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:    secretKey,
+			RequireEndpoints: true,
+		})
+		_, err := verifier.Verify(tokenString)
+		assert.Equal(t, ErrInvalidToken, err)
+	})
+
+	t.Run("accepts token with endpoints", func(t *testing.T) {
+		tokenString := sign(t, JWTClaims{
+			Piko: PikoClaims{Endpoints: []string{"my-endpoint"}},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:    secretKey,
+			RequireEndpoints: true,
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"my-endpoint"}, parsedToken.Endpoints)
+	})
+
+	t.Run("allows unscoped token when not required", func(t *testing.T) {
+		tokenString := sign(t, JWTClaims{})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey: secretKey,
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Empty(t, parsedToken.Endpoints)
+	})
+}
+
+func TestJWTVerifier_EndpointsClaim(t *testing.T) {
+	secretKey := generateTestHSKey(t)
+
+	signRaw := func(t *testing.T, claims jwt.MapClaims) string {
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString([]byte(secretKey))
+		require.NoError(t, err)
+		return tokenString
+	}
+
+	t.Run("root-level single string claim", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{"endpoint_id": "my-endpoint"})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: "endpoint_id",
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"my-endpoint"}, parsedToken.Endpoints)
+	})
+
+	t.Run("root-level array claim", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"endpoint_id": []string{"a", "b"},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: "endpoint_id",
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, parsedToken.Endpoints)
+	})
+
+	t.Run("nested custom path", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"license": map[string]any{"endpoints": []string{"store-42"}},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: "license.endpoints",
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"store-42"}, parsedToken.Endpoints)
+	})
+
+	t.Run("defaults to piko.endpoints", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"piko": map[string]any{"endpoints": []string{"my-endpoint"}},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey: secretKey,
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"my-endpoint"}, parsedToken.Endpoints)
+	})
+
+	t.Run("missing claim yields no endpoints", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{"sub": "someone"})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: "endpoint_id",
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Empty(t, parsedToken.Endpoints)
+	})
+
+	t.Run("require-endpoints rejects missing custom claim", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{"sub": "someone"})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:    secretKey,
+			EndpointsClaim:   "endpoint_id",
+			RequireEndpoints: true,
+		})
+		_, err := verifier.Verify(tokenString)
+		assert.Equal(t, ErrInvalidToken, err)
+	})
+}
+
 func generateTestHSKey(t *testing.T) []byte {
 	b := make([]byte, 10)
 	_, err := rand.Read(b)

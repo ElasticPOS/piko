@@ -76,6 +76,22 @@ fi
 if [ -n "$KEYTANA_PUBLIC_KEY" ]; then
     echo "Upstream JWT auth: ENABLED (RSA)"
     set -- "$@" --upstream.auth.rsa-public-key="${KEYTANA_PUBLIC_KEY}"
+
+    # Where the license carries the permitted endpoints. keytana licenses put a
+    # single endpoint id at the root 'endpoint_id' claim; Piko's built-in
+    # default is 'piko.endpoints'. Override via UPSTREAM_ENDPOINTS_CLAIM.
+    UPSTREAM_ENDPOINTS_CLAIM="${UPSTREAM_ENDPOINTS_CLAIM:-endpoint_id}"
+    echo "Upstream endpoints claim: ${UPSTREAM_ENDPOINTS_CLAIM}"
+    set -- "$@" --upstream.auth.endpoints-claim="${UPSTREAM_ENDPOINTS_CLAIM}"
+
+    # Require every license to scope itself to specific endpoints via that
+    # claim. Without this, a validly-signed token that omits the claim is
+    # permitted on EVERY endpoint. Opt out by setting
+    # UPSTREAM_REQUIRE_ENDPOINTS=false (e.g. if any license needs full access).
+    if [ "${UPSTREAM_REQUIRE_ENDPOINTS:-true}" = "true" ]; then
+        echo "Upstream endpoint scoping: REQUIRED"
+        set -- "$@" --upstream.auth.require-endpoints
+    fi
 else
     echo "Upstream JWT auth: DISABLED (KEYTANA_PUBLIC_KEY not set)"
 fi

@@ -40,6 +40,22 @@ type Config struct {
 	// Piko still verifies the token expiry when the client first connects.
 	DisableDisconnectOnExpiry bool `json:"disable_disconnect_on_expiry" yaml:"disable_disconnect_on_expiry"`
 
+	// EndpointsClaim is the dot-notation path into the JWT claims that holds
+	// the endpoints the token is permitted to access.
+	//
+	// Defaults to 'piko.endpoints' when empty. Set it to match where your
+	// token issuer puts the endpoints, e.g. 'endpoint_id' for a root-level
+	// claim. The value may be an array of strings or a single string.
+	EndpointsClaim string `json:"endpoints_claim" yaml:"endpoints_claim"`
+
+	// RequireEndpoints rejects tokens that don't include a non-empty
+	// endpoints claim (see EndpointsClaim).
+	//
+	// By default a token with no endpoints claim is permitted to access all
+	// endpoints. When enabled, every token must scope itself to one or more
+	// endpoints, so an unscoped token can never connect.
+	RequireEndpoints bool `json:"require_endpoints" yaml:"require_endpoints"`
+
 	// JWKS is the JSON Web Key Set to use for verifying JWTs.
 	//
 	// If provided, it will take precedence over the other keys.
@@ -54,6 +70,8 @@ type LoadedConfig struct {
 	Audience                  string
 	Issuer                    string
 	DisableDisconnectOnExpiry bool
+	EndpointsClaim            string
+	RequireEndpoints          bool
 	JWKS                      *LoadedJWKS
 }
 
@@ -70,6 +88,8 @@ func (c *Config) Load(ctx context.Context) (*LoadedConfig, error) {
 		Audience:                  c.Audience,
 		Issuer:                    c.Issuer,
 		DisableDisconnectOnExpiry: c.DisableDisconnectOnExpiry,
+		EndpointsClaim:            c.EndpointsClaim,
+		RequireEndpoints:          c.RequireEndpoints,
 	}
 
 	if c.RSAPublicKey != "" {
@@ -161,6 +181,28 @@ is ignored.`,
 Disables disconnecting the client when their token expires.
 
 Piko still verifies the token expiry when the client first connects.`,
+	)
+	fs.StringVar(
+		&c.EndpointsClaim,
+		prefix+"endpoints-claim",
+		c.EndpointsClaim,
+		`
+Dot-notation path into the JWT claims holding the permitted endpoints.
+
+Defaults to 'piko.endpoints'. Set it to match where your token issuer puts
+the endpoints, such as 'endpoint_id' for a root-level claim. The value may be
+an array of strings or a single string.`,
+	)
+	fs.BoolVar(
+		&c.RequireEndpoints,
+		prefix+"require-endpoints",
+		c.RequireEndpoints,
+		`
+Reject tokens that don't include a non-empty 'piko.endpoints' claim.
+
+By default a token with no endpoints claim may access all endpoints. When
+enabled, every token must scope itself to one or more endpoints, so an
+unscoped token can never connect.`,
 	)
 
 	c.JWKS.RegisterFlags(fs, prefix)

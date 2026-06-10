@@ -5,10 +5,15 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// DefaultEndpointsClaim is the JWT claim path the verifier reads the permitted
+// endpoints from when none is configured.
+const DefaultEndpointsClaim = "piko.endpoints"
 
 type PikoClaims struct {
 	Endpoints []string `json:"endpoints"`
@@ -30,6 +35,11 @@ type JWTVerifier struct {
 	issuer   string
 
 	disableDisconnectOnExpiry bool
+	requireEndpoints          bool
+
+	// endpointsClaim is the dot-notation path into the JWT claims that holds
+	// the permitted endpoints (e.g. "piko.endpoints" or "endpoint_id").
+	endpointsClaim []string
 
 	// methods contains the valid JWT methods, which depends on the
 	// verification keys configured.
@@ -37,10 +47,17 @@ type JWTVerifier struct {
 }
 
 func NewJWTVerifier(conf *LoadedConfig) *JWTVerifier {
+	endpointsClaim := conf.EndpointsClaim
+	if endpointsClaim == "" {
+		endpointsClaim = DefaultEndpointsClaim
+	}
+
 	v := &JWTVerifier{
 		audience:                  conf.Audience,
 		issuer:                    conf.Issuer,
 		disableDisconnectOnExpiry: conf.DisableDisconnectOnExpiry,
+		requireEndpoints:          conf.RequireEndpoints,
+		endpointsClaim:            strings.Split(endpointsClaim, "."),
 	}
 
 	if len(conf.HMACSecretKey) > 0 {
@@ -63,7 +80,7 @@ func NewJWTVerifier(conf *LoadedConfig) *JWTVerifier {
 }
 
 func (v *JWTVerifier) Verify(tokenString string) (*Token, error) {
-	claims := &JWTClaims{}
+	claims := jwt.MapClaims{}
 
 	opts := []jwt.ParserOption{
 		jwt.WithValidMethods(v.methods),
@@ -118,17 +135,69 @@ func (v *JWTVerifier) Verify(tokenString string) (*Token, error) {
 		return nil, ErrInvalidToken
 	}
 
+	endpoints := extractEndpoints(claims, v.endpointsClaim)
+
+	// When required, reject tokens that don't scope themselves to specific
+	// endpoints. Otherwise an unscoped token would be permitted on every
+	// endpoint (see Token.EndpointPermitted).
+	if v.requireEndpoints && len(endpoints) == 0 {
+		return nil, ErrInvalidToken
+	}
+
 	// Discard the expiry if DisableDisconnectOnExpiry (we've already
-	// checked whether the token expired, claims.ExpiresAt is used to
-	// disconnect when the token expires).
+	// checked whether the token expired, the expiry is used to disconnect
+	// the client when the token expires).
 	var expiry time.Time
-	if claims.ExpiresAt != nil && !v.disableDisconnectOnExpiry {
-		expiry = claims.ExpiresAt.Time
+	if !v.disableDisconnectOnExpiry {
+		// GetExpirationTime returns (nil, nil) when there is no 'exp' claim.
+		if exp, err := claims.GetExpirationTime(); err == nil && exp != nil {
+			expiry = exp.Time
+		}
 	}
 	return &Token{
 		Expiry:    expiry,
-		Endpoints: claims.Piko.Endpoints,
+		Endpoints: endpoints,
 	}, nil
+}
+
+// extractEndpoints walks the given dot-notation claim path and coerces the
+// value found there into a list of endpoint IDs.
+//
+// The value may be a JSON array of strings (e.g. "piko.endpoints":
+// ["a", "b"]) or a single string (e.g. "endpoint_id": "a"). A missing path,
+// or any other type, yields no endpoints.
+func extractEndpoints(claims jwt.MapClaims, path []string) []string {
+	var cur any = map[string]any(claims)
+	for _, key := range path {
+		obj, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur, ok = obj[key]
+		if !ok {
+			return nil
+		}
+	}
+
+	switch val := cur.(type) {
+	case string:
+		if val == "" {
+			return nil
+		}
+		return []string{val}
+	case []string:
+		return val
+	case []any:
+		endpoints := make([]string, 0, len(val))
+		for _, item := range val {
+			if s, ok := item.(string); ok && s != "" {
+				endpoints = append(endpoints, s)
+			}
+		}
+		return endpoints
+	default:
+		return nil
+	}
 }
 
 var _ Verifier = &JWTVerifier{}
