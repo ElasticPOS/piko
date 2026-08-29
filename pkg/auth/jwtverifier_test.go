@@ -368,7 +368,7 @@ func TestJWTVerifier_RequireEndpoints(t *testing.T) {
 			RequireEndpoints: true,
 		})
 		_, err := verifier.Verify(tokenString)
-		assert.Equal(t, ErrInvalidToken, err)
+		assert.ErrorIs(t, err, ErrMissingEndpoints)
 	})
 
 	t.Run("accepts token with endpoints", func(t *testing.T) {
@@ -481,7 +481,7 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 			RequireEndpoints: true,
 		})
 		_, err := verifier.Verify(tokenString)
-		assert.Equal(t, ErrInvalidToken, err)
+		assert.ErrorIs(t, err, ErrMissingEndpoints)
 	})
 }
 

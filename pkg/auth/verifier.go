@@ -10,6 +10,10 @@ var (
 	ErrInvalidToken  = errors.New("invalid token")
 	ErrExpiredToken  = errors.New("expired token")
 	ErrUnknownTenant = errors.New("unknown tenant")
+
+	// ErrMissingEndpoints is returned when a token is otherwise valid but
+	// doesn't scope itself to any endpoints and require_endpoints is enabled.
+	ErrMissingEndpoints = errors.New("token missing endpoints")
 )
 
 // Token represents an authenticated Piko token.

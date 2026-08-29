@@ -64,6 +64,17 @@ func (m *Auth) Verify(c *gin.Context) {
 			)
 			return
 		}
+		if errors.Is(err, auth.ErrMissingEndpoints) {
+			m.logger.Warn(
+				"auth token missing endpoints",
+				zap.Error(err),
+			)
+			c.AbortWithStatusJSON(
+				http.StatusUnauthorized,
+				gin.H{"error": "token missing endpoints"},
+			)
+			return
+		}
 		if errors.Is(err, auth.ErrUnknownTenant) {
 			m.logger.Warn(
 				"auth unknwon tenant",

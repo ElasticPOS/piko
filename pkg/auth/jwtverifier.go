@@ -141,7 +141,9 @@ func (v *JWTVerifier) Verify(tokenString string) (*Token, error) {
 	// endpoints. Otherwise an unscoped token would be permitted on every
 	// endpoint (see Token.EndpointPermitted).
 	if v.requireEndpoints && len(endpoints) == 0 {
-		return nil, ErrInvalidToken
+		return nil, fmt.Errorf(
+			"%w: %s", ErrMissingEndpoints, strings.Join(v.endpointsClaim, "."),
+		)
 	}
 
 	// Discard the expiry if DisableDisconnectOnExpiry (we've already
