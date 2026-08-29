@@ -75,7 +75,7 @@ func TestClusterState_ApplyDigest(t *testing.T) {
 			"node-1", "1.1.1.1", &fakeFailureDetector{}, newMetrics(), newNopWatcher(),
 		)
 
-		clusterState.ApplyDigest(digest{
+		clusterState.ApplyDigest("", digest{
 			{"node-2", "2.2.2.2", 5, false},
 			{"node-3", "3.3.3.3", 12, false},
 			{"node-4", "4.4.4.4", 2, false},
@@ -105,7 +105,7 @@ func TestClusterState_ApplyDigest(t *testing.T) {
 		)
 
 		// Apply should ignore left nodes.
-		clusterState.ApplyDigest(digest{
+		clusterState.ApplyDigest("", digest{
 			{"node-2", "2.2.2.2", 5, true},
 			{"node-3", "3.3.3.3", 12, true},
 			{"node-4", "4.4.4.4", 2, false},
@@ -133,7 +133,7 @@ func TestClusterState_ApplyDigest(t *testing.T) {
 			"node-1", "1.1.1.1", &fakeFailureDetector{}, newMetrics(), watcher,
 		)
 
-		clusterState.ApplyDigest(digest{
+		clusterState.ApplyDigest("", digest{
 			{"node-2", "2.2.2.2", 5, false},
 			{"node-3", "3.3.3.3", 12, true},
 			{"node-4", "4.4.4.4", 2, false},
@@ -152,7 +152,7 @@ func TestClusterState_ApplyDelta(t *testing.T) {
 			"node-1", "1.1.1.1", &fakeFailureDetector{}, newMetrics(), newNopWatcher(),
 		)
 
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -206,7 +206,7 @@ func TestClusterState_ApplyDelta(t *testing.T) {
 			},
 		}, state)
 
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -240,7 +240,7 @@ func TestClusterState_ApplyDelta(t *testing.T) {
 			"node-1", "1.1.1.1", &fakeFailureDetector{}, newMetrics(), watcher,
 		)
 
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -261,7 +261,7 @@ func TestClusterState_ApplyDelta(t *testing.T) {
 			},
 		})
 		// Delete keys.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -305,7 +305,7 @@ func TestClusterState_Digest(t *testing.T) {
 	clusterState.UpsertLocal("k3", "v3")
 	clusterState.DeleteLocal("k2")
 
-	clusterState.ApplyDelta(delta{
+	clusterState.ApplyDelta("", delta{
 		{
 			ID:   "node-2",
 			Addr: "2.2.2.2",
@@ -346,7 +346,7 @@ func TestClusterState_Delta(t *testing.T) {
 	clusterState.UpsertLocal("k3", "v3")
 	clusterState.DeleteLocal("k2")
 
-	clusterState.ApplyDelta(delta{
+	clusterState.ApplyDelta("", delta{
 		{
 			ID:   "node-2",
 			Addr: "2.2.2.2",
@@ -462,7 +462,7 @@ func TestClusterState_Leave(t *testing.T) {
 		)
 
 		// Add node-2.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -473,7 +473,7 @@ func TestClusterState_Leave(t *testing.T) {
 			},
 		})
 		// Leave.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -506,7 +506,7 @@ func TestClusterState_Leave(t *testing.T) {
 		)
 
 		// Add node-2.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -517,7 +517,7 @@ func TestClusterState_Leave(t *testing.T) {
 			},
 		})
 		// Leave.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -538,7 +538,7 @@ func TestClusterState_Leave(t *testing.T) {
 		)
 
 		// Add node-2.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -549,7 +549,7 @@ func TestClusterState_Leave(t *testing.T) {
 			},
 		})
 		// Leave.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -564,6 +564,95 @@ func TestClusterState_Leave(t *testing.T) {
 		assert.Equal(t, []string{"node-2"}, watcher.joins)
 		assert.Equal(t, []string{"node-2"}, watcher.leaves)
 		assert.Equal(t, []string{"node-2"}, watcher.expires)
+	})
+}
+
+func TestClusterState_RemoveExpired(t *testing.T) {
+	// expiredNodeState returns a cluster state where node-2 has failed and
+	// been removed once expired, so has a tombstone.
+	expiredNodeState := func(
+		watcher Watcher, removedAt time.Time,
+	) *clusterState {
+		clusterState := newClusterState(
+			"node-1", "1.1.1.1:1", &fakeFailureDetector{
+				map[string]float64{"node-2": 25.0},
+			}, newMetrics(), watcher,
+		)
+		clusterState.ApplyDelta("node-2", delta{
+			{
+				ID:      "node-2",
+				Addr:    "2.2.2.2",
+				Entries: []Entry{{"k1", "v1", 1, false, false}},
+			},
+		})
+
+		// Mark node-2 as unreachable, then remove it once expired.
+		clusterState.UpdateLiveness(20.0)
+		clusterState.RemoveExpiredAt(removedAt)
+
+		_, ok := clusterState.Node("node-2")
+		assert.False(t, ok)
+
+		return clusterState
+	}
+
+	t.Run("ignore rediscovered node", func(t *testing.T) {
+		watcher := &fakeWatcher{}
+		clusterState := expiredNodeState(watcher, time.Now().Add(nodeExpiry*2))
+
+		// node-3 hasn't expired node-2 yet, though must not be able to
+		// reintroduce it.
+		clusterState.ApplyDigest("node-3", digest{
+			{"node-2", "2.2.2.2", 1, false},
+		})
+		_, ok := clusterState.Node("node-2")
+		assert.False(t, ok)
+
+		clusterState.ApplyDelta("node-3", delta{
+			{
+				ID:      "node-2",
+				Addr:    "2.2.2.2",
+				Entries: []Entry{{"k2", "v2", 2, false, false}},
+			},
+		})
+		_, ok = clusterState.Node("node-2")
+		assert.False(t, ok)
+
+		// node-2 must only have joined once, before it expired.
+		assert.Equal(t, []string{"node-2"}, watcher.joins)
+		assert.Equal(t, []string{"node-2"}, watcher.expires)
+	})
+
+	t.Run("rejoin node itself", func(t *testing.T) {
+		watcher := &fakeWatcher{}
+		clusterState := expiredNodeState(watcher, time.Now().Add(nodeExpiry*2))
+
+		// Hearing from node-2 directly proves it is alive, so it can rejoin.
+		clusterState.ApplyDigest("node-2", digest{
+			{"node-2", "2.2.2.2", 1, false},
+		})
+
+		node, ok := clusterState.Node("node-2")
+		assert.True(t, ok)
+		assert.Equal(t, "2.2.2.2", node.Addr)
+		assert.Equal(t, []string{"node-2", "node-2"}, watcher.joins)
+	})
+
+	t.Run("tombstone expires", func(t *testing.T) {
+		removedAt := time.Now().Add(nodeExpiry * 2)
+		clusterState := expiredNodeState(&fakeWatcher{}, removedAt)
+
+		clusterState.RemoveExpiredAt(
+			removedAt.Add(nodeTombstoneExpiry + time.Second),
+		)
+
+		// Once the tombstone has expired node-2 can be rediscovered again.
+		clusterState.ApplyDigest("node-3", digest{
+			{"node-2", "2.2.2.2", 1, false},
+		})
+
+		_, ok := clusterState.Node("node-2")
+		assert.True(t, ok)
 	})
 }
 
@@ -618,7 +707,7 @@ func TestClusterState_Compact(t *testing.T) {
 		)
 
 		// Add entries.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -631,7 +720,7 @@ func TestClusterState_Compact(t *testing.T) {
 			},
 		})
 		// Delete entries.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -642,7 +731,7 @@ func TestClusterState_Compact(t *testing.T) {
 			},
 		})
 		// Compact entries.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -673,7 +762,7 @@ func TestClusterState_Compact(t *testing.T) {
 		)
 
 		// Add entries.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -689,7 +778,7 @@ func TestClusterState_Compact(t *testing.T) {
 		// Compact entries.
 		//
 		// Note compacting before the node learned k2 and k3 were deleted.
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -722,7 +811,7 @@ func TestClusterState_UpdateLiveness(t *testing.T) {
 				},
 			}, newMetrics(), newNopWatcher(),
 		)
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -751,7 +840,7 @@ func TestClusterState_UpdateLiveness(t *testing.T) {
 		clusterState := newClusterState(
 			"node-1", "1.1.1.1:1", &fakeFailureDetector{suspicionLevels}, newMetrics(), newNopWatcher(),
 		)
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",
@@ -785,7 +874,7 @@ func TestClusterState_UpdateLiveness(t *testing.T) {
 		clusterState := newClusterState(
 			"node-1", "1.1.1.1:1", &fakeFailureDetector{suspicionLevels}, newMetrics(), watcher,
 		)
-		clusterState.ApplyDelta(delta{
+		clusterState.ApplyDelta("", delta{
 			{
 				ID:   "node-2",
 				Addr: "2.2.2.2",

@@ -468,7 +468,7 @@ func (g *Gossip) join(addr string) (string, error) {
 	}
 	g.metrics.DeltaEntriesInbound.Add(float64(delta.EntriesTotal()))
 
-	g.state.ApplyDelta(delta)
+	g.state.ApplyDelta(header.NodeID, delta)
 
 	return header.NodeID, nil
 }

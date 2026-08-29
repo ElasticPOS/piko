@@ -20,6 +20,20 @@ const (
 	// nodeExpiry is the duration a left or unreachable node is stored until it
 	// is is removed.
 	nodeExpiry = time.Minute
+
+	// nodeTombstoneExpiry is the duration a node that has been removed after
+	// expiring is remembered for.
+	//
+	// Nodes expire independently, so without a tombstone a node that has
+	// already removed a failed node keeps rediscovering it from the nodes that
+	// haven't removed it yet. Each rediscovery restarts the nodes expiry, so
+	// the failed node is never forgotten and instead flaps between joined,
+	// unreachable and expired forever. Nodes that leave gracefully don't have
+	// this problem as their 'left' state propagates through the cluster.
+	//
+	// Therefore the tombstone must outlive the spread between when different
+	// nodes expire the same failed node.
+	nodeTombstoneExpiry = nodeExpiry * 2
 )
 
 // Entry represents a versioned key-value pair state.
@@ -118,6 +132,10 @@ type clusterState struct {
 	localID string
 	nodes   map[string]*nodeState
 
+	// tombstones contains the nodes that have been removed after expiring,
+	// mapped to the time they were removed.
+	tombstones map[string]time.Time
+
 	// mu protects the above fields.
 	mu sync.Mutex
 
@@ -149,6 +167,7 @@ func newClusterState(
 	return &clusterState{
 		localID:         localID,
 		nodes:           nodes,
+		tombstones:      make(map[string]time.Time),
 		failureDetector: failureDetector,
 		metrics:         metrics,
 		watcher:         watcher,
@@ -441,7 +460,10 @@ func (s *clusterState) LocalDelta() delta {
 
 // ApplyDigest discovers any nodes we don't yet know about from the given
 // digest and adds them to our local state with a version of 0.
-func (s *clusterState) ApplyDigest(digest digest) {
+//
+// senderID is the node the digest was received from, which is the only node
+// that can resurrect its own state once it has been removed as expired.
+func (s *clusterState) ApplyDigest(senderID string, digest digest) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -454,6 +476,10 @@ func (s *clusterState) ApplyDigest(digest digest) {
 		// already, then ignore it. Otherwise nodes will keep being
 		// re-discovered after they left.
 		if entry.Left {
+			continue
+		}
+		// Same for a node we've already removed as expired.
+		if s.tombstoned(entry.ID, senderID) {
 			continue
 		}
 
@@ -471,12 +497,15 @@ func (s *clusterState) ApplyDigest(digest digest) {
 }
 
 // ApplyDelta updates the state of remote nodes given the delta state.
-func (s *clusterState) ApplyDelta(delta delta) {
+//
+// senderID is the node the delta was received from, which is the only node
+// that can resurrect its own state once it has been removed as expired.
+func (s *clusterState) ApplyDelta(senderID string, delta delta) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	for _, entry := range delta {
-		s.applyDeltaEntry(entry)
+		s.applyDeltaEntry(senderID, entry)
 	}
 }
 
@@ -504,7 +533,7 @@ func (s *clusterState) deltaEntry(nodeID string, fromVersion uint64) deltaEntry 
 	return deltaEntry
 }
 
-func (s *clusterState) applyDeltaEntry(entry deltaEntry) {
+func (s *clusterState) applyDeltaEntry(senderID string, entry deltaEntry) {
 	if entry.ID == s.localID {
 		// Discard updates about local node.
 		return
@@ -512,6 +541,11 @@ func (s *clusterState) applyDeltaEntry(entry deltaEntry) {
 
 	state, ok := s.nodes[entry.ID]
 	if !ok {
+		// Discard state about a node we've already removed as expired.
+		if s.tombstoned(entry.ID, senderID) {
+			return
+		}
+
 		s.nodes[entry.ID] = &nodeState{
 			NodeMetadata: NodeMetadata{
 				ID:   entry.ID,
@@ -581,6 +615,14 @@ func (s *clusterState) RemoveExpiredAt(t time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Discard the tombstones of nodes every node in the cluster will have
+	// expired by now.
+	for id, removedAt := range s.tombstones {
+		if t.After(removedAt.Add(nodeTombstoneExpiry)) {
+			delete(s.tombstones, id)
+		}
+	}
+
 	var nodeIDs []string
 	for _, state := range s.nodes {
 		if !state.Expiry.IsZero() && t.After(state.Expiry) {
@@ -590,6 +632,9 @@ func (s *clusterState) RemoveExpiredAt(t time.Time) {
 
 	for _, id := range nodeIDs {
 		delete(s.nodes, id)
+		// Remember the node so the nodes that haven't expired it yet can't
+		// reintroduce it to us.
+		s.tombstones[id] = t
 
 		s.metrics.Entries.DeletePartialMatch(prometheus.Labels{
 			"node_id": id,
@@ -598,6 +643,25 @@ func (s *clusterState) RemoveExpiredAt(t time.Time) {
 		s.watcher.OnExpired(id)
 		s.failureDetector.Remove(id)
 	}
+}
+
+// tombstoned returns whether the node with the given ID has been removed as
+// expired, so must not be rediscovered from the node with the given sender ID.
+//
+// Hearing from a node directly proves it is alive, whereas hearing about it
+// from another node doesn't, since that node may not have expired it yet.
+// Therefore the node itself discards its own tombstone, otherwise a node that
+// was expired incorrectly, such as during a network partition, could never
+// rejoin the cluster.
+func (s *clusterState) tombstoned(nodeID, senderID string) bool {
+	if _, ok := s.tombstones[nodeID]; !ok {
+		return false
+	}
+	if nodeID == senderID {
+		delete(s.tombstones, nodeID)
+		return false
+	}
+	return true
 }
 
 func (s *clusterState) UpdateLiveness(suspicionThreshold float64) {

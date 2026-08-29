@@ -139,10 +139,10 @@ func (l *streamListener) join(r io.Reader, w *bufio.Writer) error {
 	l.metrics.DigestEntriesInbound.Add(float64(len(digest)))
 
 	// Apply unknown state from the delta.
-	l.state.ApplyDelta(delta)
+	l.state.ApplyDelta(header.NodeID, delta)
 
 	// Discover any unknown nodes from the digest.
-	l.state.ApplyDigest(digest)
+	l.state.ApplyDigest(header.NodeID, digest)
 
 	localMeta := l.state.LocalNodeMetadata()
 	encoder := newEncoder(w)
@@ -180,7 +180,7 @@ func (l *streamListener) leave(r io.Reader, w *bufio.Writer) error {
 	l.metrics.DeltaEntriesInbound.Add(float64(delta.EntriesTotal()))
 
 	// Apply unknown state from the delta.
-	l.state.ApplyDelta(delta)
+	l.state.ApplyDelta(header.NodeID, delta)
 
 	// Send our own header as an acknowledgement.
 	localMeta := l.state.LocalNodeMetadata()
@@ -292,7 +292,7 @@ func (l *packetListener) digest(b []byte) error {
 	l.metrics.DigestEntriesInbound.Add(float64(len(digest)))
 
 	// Discover any unknown nodes from the digest.
-	l.state.ApplyDigest(digest)
+	l.state.ApplyDigest(header.NodeID, digest)
 
 	delta := l.state.Delta(digest, false)
 	if err := l.sendDelta(delta, header.Addr); err != nil {
@@ -325,7 +325,7 @@ func (l *packetListener) delta(b []byte) error {
 
 	l.failureDetector.Report(header.NodeID)
 
-	l.state.ApplyDelta(delta)
+	l.state.ApplyDelta(header.NodeID, delta)
 
 	return nil
 }
