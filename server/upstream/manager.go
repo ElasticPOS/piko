@@ -161,6 +161,31 @@ func (m *LoadBalancedManager) Endpoints() map[string]int {
 	return endpoints
 }
 
+// Upstreams returns the upstreams connected to the local node for the given
+// endpoint.
+//
+// Only client connections are returned, as upstreams forwarding to another
+// node are never registered locally.
+func (m *LoadBalancedManager) Upstreams(endpointID string) []ConnMetadata {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	lb, ok := m.localUpstreams[endpointID]
+	if !ok {
+		return []ConnMetadata{}
+	}
+
+	upstreams := make([]ConnMetadata, 0, len(lb.upstreams))
+	for _, u := range lb.upstreams {
+		conn, ok := u.(*ConnUpstream)
+		if !ok {
+			continue
+		}
+		upstreams = append(upstreams, conn.Metadata())
+	}
+	return upstreams
+}
+
 func (m *LoadBalancedManager) Metrics() *Metrics {
 	return m.metrics
 }

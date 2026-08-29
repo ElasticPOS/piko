@@ -142,6 +142,7 @@ func runAgent(conf *config.Config, logger log.Logger) error {
 		URL:           connectURL,
 		Token:         conf.Connect.Token,
 		TenantID:      conf.Connect.TenantID,
+		Name:          conf.Name,
 		TLSConfig:     connectTLSConfig,
 		ProxyURL:      proxyURL,
 		MaxWindowSize: conf.Stream.MaxWindowSize,

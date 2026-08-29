@@ -421,6 +421,15 @@ If the host is unspecified it defaults to all listeners, such as
 }
 
 type Config struct {
+	// Name identifies this agent to the Piko server, such as the hostname of
+	// the machine it runs on.
+	//
+	// Several agents may listen on the same endpoint, so the name is what
+	// tells them apart when inspecting the endpoint's upstreams.
+	//
+	// Defaults to the hostname of the machine.
+	Name string `json:"name" yaml:"name"`
+
 	Listeners []ListenerConfig `json:"listeners" yaml:"listeners"`
 
 	Connect ConnectConfig `json:"connect" yaml:"connect"`
@@ -438,7 +447,12 @@ type Config struct {
 }
 
 func Default() *Config {
+	// Ignore the error, as an agent without a name still works, it's just
+	// harder to tell apart from the other agents on the same endpoint.
+	hostname, _ := os.Hostname()
+
 	return &Config{
+		Name: hostname,
 		Connect: ConnectConfig{
 			URL:     "http://localhost:8001",
 			Timeout: time.Second * 30,
@@ -492,6 +506,20 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) RegisterFlags(fs *pflag.FlagSet) {
+	fs.StringVar(
+		&c.Name,
+		"name",
+		c.Name,
+		`
+A name identifying the agent to the Piko server, such as the hostname of the
+machine it runs on.
+
+Several agents may listen on the same endpoint, so the name is what tells them
+apart when inspecting the endpoint's upstreams.
+
+Defaults to the hostname of the machine.`,
+	)
+
 	c.Connect.RegisterFlags(fs)
 	c.Stream.RegisterFlags(fs)
 	c.Server.RegisterFlags(fs)

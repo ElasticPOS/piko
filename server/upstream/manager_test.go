@@ -5,6 +5,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/andydunstall/piko/pkg/log"
+	"github.com/andydunstall/piko/server/cluster"
 )
 
 type fakeUpstream struct {
@@ -57,4 +61,40 @@ func TestLocalLoadBalancer(t *testing.T) {
 	assert.True(t, lb.Remove(u4))
 
 	assert.Nil(t, lb.Next())
+}
+
+// Tests the manager describes the clients connected to the local node for an
+// endpoint.
+func TestLoadBalancedManager_Upstreams(t *testing.T) {
+	m := NewLoadBalancedManager(
+		cluster.NewState(&cluster.Node{ID: "local"}, log.NewNopLogger()),
+		nil,
+	)
+
+	assert.Empty(t, m.Upstreams("my-endpoint"))
+
+	named := NewConnUpstream("my-endpoint", nil, "my-host", "10.26.0.1")
+	// Clients aren't required to send a name.
+	unnamed := NewConnUpstream("my-endpoint", nil, "", "10.26.0.2")
+	m.AddConn(named)
+	m.AddConn(unnamed)
+
+	upstreams := m.Upstreams("my-endpoint")
+	require.Len(t, upstreams, 2)
+	assert.Equal(t, "my-host", upstreams[0].Name)
+	assert.Equal(t, "10.26.0.1", upstreams[0].Addr)
+	assert.NotZero(t, upstreams[0].ConnectedAt)
+	assert.Equal(t, "", upstreams[1].Name)
+	assert.Equal(t, "10.26.0.2", upstreams[1].Addr)
+
+	// Other endpoints are unaffected.
+	assert.Empty(t, m.Upstreams("other-endpoint"))
+
+	m.RemoveConn(named)
+	upstreams = m.Upstreams("my-endpoint")
+	require.Len(t, upstreams, 1)
+	assert.Equal(t, "10.26.0.2", upstreams[0].Addr)
+
+	m.RemoveConn(unnamed)
+	assert.Empty(t, m.Upstreams("my-endpoint"))
 }

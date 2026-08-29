@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"net"
+	"time"
 
 	"github.com/andydunstall/yamux"
 
@@ -31,17 +32,57 @@ type Upstream interface {
 	Forward() bool
 }
 
+// ConnMetadata describes an upstream service connected to the local node.
+//
+// Several clients may listen on the same endpoint, so this describes which
+// client a connection belongs to when inspecting an endpoint.
+type ConnMetadata struct {
+	// Name is the name the client gave itself, such as the hostname of the
+	// machine it runs on.
+	//
+	// The name is client supplied and optional, so it may be empty and is not
+	// unique.
+	Name string `json:"name,omitempty"`
+
+	// Addr is the client address the connection came from.
+	Addr string `json:"addr,omitempty"`
+
+	// ConnectedAt is when the client connected, as a Unix timestamp in
+	// milliseconds.
+	ConnectedAt int64 `json:"connected_at,omitempty"`
+}
+
 // ConnUpstream represents a connection to an upstream service thats connected
 // to the local node.
 type ConnUpstream struct {
-	endpointID string
-	sess       *yamux.Session
+	endpointID  string
+	sess        *yamux.Session
+	name        string
+	addr        string
+	connectedAt time.Time
 }
 
-func NewConnUpstream(endpointID string, sess *yamux.Session) *ConnUpstream {
+func NewConnUpstream(
+	endpointID string,
+	sess *yamux.Session,
+	name string,
+	addr string,
+) *ConnUpstream {
 	return &ConnUpstream{
-		endpointID: endpointID,
-		sess:       sess,
+		endpointID:  endpointID,
+		sess:        sess,
+		name:        name,
+		addr:        addr,
+		connectedAt: time.Now(),
+	}
+}
+
+// Metadata describes the client that opened the connection.
+func (u *ConnUpstream) Metadata() ConnMetadata {
+	return ConnMetadata{
+		Name:        u.name,
+		Addr:        u.addr,
+		ConnectedAt: u.connectedAt.UnixMilli(),
 	}
 }
 

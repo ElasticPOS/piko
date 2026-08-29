@@ -51,6 +51,18 @@ type Upstream struct {
 	// Experimental.
 	TenantID string
 
+	// Name identifies this client to the Piko server, such as the hostname of
+	// the machine it runs on.
+	//
+	// Multiple clients may listen on the same endpoint, so the name is used
+	// to tell them apart when inspecting the endpoint's upstreams. It has no
+	// effect on routing.
+	//
+	// The server truncates long names and strips control characters.
+	//
+	// Defaults to no name (optional).
+	Name string
+
 	// TLSConfig specifies the TLS configuration to use with the Piko server.
 	//
 	// If nil, the default configuration is used.
@@ -207,6 +219,12 @@ func (u *Upstream) listenURL(endpointID string) string {
 
 	// Add the listen path to the URL.
 	listenURL.Path += "/piko/v1/upstream/" + endpointID
+
+	if u.Name != "" {
+		query := listenURL.Query()
+		query.Set("name", u.Name)
+		listenURL.RawQuery = query.Encode()
+	}
 
 	// Set the scheme to WebSocket.
 	if listenURL.Scheme == "http" {

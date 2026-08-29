@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	neturl "net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -79,6 +81,36 @@ func TestServer_Register(t *testing.T) {
 
 		removedUpstream := <-manager.removeConnCh
 		assert.Equal(t, "my-endpoint", removedUpstream.EndpointID())
+	})
+
+	// Tests the client supplied name is recorded against the upstream, after
+	// being sanitized.
+	t.Run("name", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		manager := newFakeManager()
+
+		s := NewServer(manager, nil, nil, nil, config.UpstreamConfig{}, config.StreamConfig{MaxWindowSize: 256 * 1024}, log.NewNopLogger())
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		url := fmt.Sprintf(
+			"ws://%s/piko/v1/upstream/my-endpoint?name=%s",
+			ln.Addr().String(),
+			neturl.QueryEscape("  my-host\n  "),
+		)
+		conn, err := websocket.Dial(context.TODO(), url)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		addedUpstream := <-manager.addConnCh
+		metadata := addedUpstream.(*ConnUpstream).Metadata()
+		assert.Equal(t, "my-host", metadata.Name)
+		assert.Equal(t, "127.0.0.1", metadata.Addr)
+		assert.NotZero(t, metadata.ConnectedAt)
 	})
 
 	// Tests the server closes upstream connections when it is shutdown.
@@ -345,4 +377,24 @@ func TestServer_TLS(t *testing.T) {
 		_, err := websocket.Dial(context.TODO(), url)
 		require.ErrorContains(t, err, "bad handshake")
 	})
+}
+
+func TestSanitizeName(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "", want: ""},
+		{name: "my-host", want: "my-host"},
+		{name: "  my-host  ", want: "my-host"},
+		// Control characters are stripped as the name is written to the logs
+		// and the status API.
+		{name: "my\rhost\x00", want: "myhost"},
+		// Long names are truncated by rune, not byte, so the result stays
+		// valid UTF-8.
+		{name: strings.Repeat("\u00e9", maxNameLen+10), want: strings.Repeat("\u00e9", maxNameLen)},
+	}
+	for _, test := range tests {
+		assert.Equal(t, test.want, sanitizeName(test.name))
+	}
 }

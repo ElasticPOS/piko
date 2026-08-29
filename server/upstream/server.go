@@ -8,7 +8,10 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/andydunstall/yamux"
 	"github.com/gin-gonic/gin"
@@ -189,6 +192,11 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 		tenantID = endpointToken.TenantID
 	}
 
+	// The name identifies the client to whoever inspects the endpoint, as
+	// multiple clients may listen on the same endpoint. It's optional and
+	// unverified, so it's sanitized before being stored.
+	name := sanitizeName(c.Query("name"))
+
 	wsConn, err := s.websocketUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		// Upgrade replies to the client so nothing else to do.
@@ -201,12 +209,14 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	s.logger.Info(
 		"upstream connected",
 		zap.String("endpoint-id", endpointID),
+		zap.String("name", name),
 		zap.String("client-ip", c.ClientIP()),
 		zap.String("tenant-id", tenantID),
 	)
 	defer s.logger.Info(
 		"upstream disconnected",
 		zap.String("endpoint-id", endpointID),
+		zap.String("name", name),
 		zap.String("client-ip", c.ClientIP()),
 		zap.String("tenant-id", tenantID),
 	)
@@ -237,7 +247,7 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	s.addSession(sess)
 	defer s.removeSession(sess)
 
-	upstream := NewConnUpstream(endpointID, sess)
+	upstream := NewConnUpstream(endpointID, sess, name, c.ClientIP())
 
 	s.upstreams.AddConn(upstream)
 	defer s.upstreams.RemoveConn(upstream)
@@ -264,6 +274,28 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// maxNameLen is the maximum length of a client supplied upstream name, in
+// runes.
+const maxNameLen = 64
+
+// sanitizeName cleans up the client supplied upstream name, which is echoed
+// back by the status API and written to the logs.
+func sanitizeName(name string) string {
+	name = strings.Map(func(r rune) rune {
+		if r == utf8.RuneError || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, name)
+	name = strings.TrimSpace(name)
+
+	runes := []rune(name)
+	if len(runes) > maxNameLen {
+		return string(runes[:maxNameLen])
+	}
+	return name
 }
 
 func (s *Server) addSession(sess *yamux.Session) {

@@ -290,6 +290,28 @@
       background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
       font-family: var(--mono); font-size: 12px; line-height: 1.5;
     }
+    .ups { display: flex; flex-direction: column; gap: 8px; }
+    .ups .node {
+      padding: 10px 12px; background: var(--surface-2);
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    .ups .node > .head {
+      display: flex; align-items: baseline; gap: 10px;
+      font-family: var(--mono); font-size: 12px; color: var(--text);
+    }
+    .ups .node > .head .count {
+      margin-left: auto; font-family: var(--sans); font-size: 12px; color: var(--muted);
+    }
+    .ups .client {
+      display: flex; align-items: baseline; gap: 10px;
+      margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);
+    }
+    .ups .client .name { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+    .ups .client .name.unnamed { color: var(--faint); font-style: italic; }
+    .ups .client .meta {
+      margin-left: auto; text-align: right; font-size: 11.5px; color: var(--faint);
+      white-space: nowrap;
+    }
 
     /* ---------- login ----------------------------------------------------- */
     .gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
@@ -695,7 +717,8 @@
       if (s < 2) return "just now";
       if (s < 60) return s + "s ago";
       if (s < 3600) return Math.floor(s / 60) + "m ago";
-      return Math.floor(s / 3600) + "h ago";
+      if (s < 86400) return Math.floor(s / 3600) + "h ago";
+      return Math.floor(s / 86400) + "d ago";
     };
     const toast = (msg, kind) => {
       const el = document.createElement("div");
@@ -1198,11 +1221,62 @@
               <button class="btn tiny" data-copy="${esc(cmd)}">Copy</button></div>
           </div>`).join("")}
         <h4>Upstreams per node</h4>
-        ${e.nodes.length
-          ? `<dl class="kv">${e.nodes.map((n) =>
-              `<dt>${esc(n.id)}</dt><dd>${n.listeners} listener${n.listeners > 1 ? "s" : ""}</dd>`).join("")}</dl>`
-          : `<p style="color:var(--muted)">Registered on this node.</p>`}
+        <div class="ups" id="ep-upstreams" data-endpoint="${esc(id)}">
+          ${upstreamNodes(e).map((n) => upstreamNodeHTML(n)).join("")}
+        </div>
       `);
+      loadEndpointUpstreams(e);
+    }
+
+    // The nodes serving an endpoint, falling back to this node when cluster
+    // status isn't mounted and all we know is the local registry.
+    const upstreamNodes = (e) => e.nodes.length
+      ? e.nodes
+      : [{ id: state.local?.id || "", listeners: e.upstreams }];
+
+    // Which client each upstream connection belongs to is only known to the
+    // node holding it — gossip carries counts alone — so ask each node
+    // serving the endpoint. 'conns' is undefined while a node is still
+    // loading and null if it couldn't be asked.
+    function upstreamNodeHTML(n, conns) {
+      const head = `<div class="head"><span>${esc(n.id || "this node")}</span>` +
+        `<span class="count">${n.listeners} listener${n.listeners === 1 ? "" : "s"}</span></div>`;
+      const note = (text) => `<div class="client"><span class="meta">${text}</span></div>`;
+
+      let body;
+      if (conns === undefined) body = note("loading…");
+      else if (conns === null) body = note("names unavailable");
+      else if (!conns.length) body = note("no connections");
+      else body = conns.map((c) => `
+        <div class="client">
+          <span class="name${c.name ? "" : " unnamed"}">${esc(c.name || "unnamed")}</span>
+          <span class="meta">${esc(c.addr || "")}${
+            c.connected_at ? "<br>connected " + ago(c.connected_at) : ""}</span>
+        </div>`).join("");
+
+      return `<div class="node">${head}${body}</div>`;
+    }
+
+    async function loadEndpointUpstreams(e) {
+      const nodes = upstreamNodes(e);
+      const conns = await Promise.all(nodes.map(async (n) => {
+        // Forward to the node holding the connections, unless it's this one.
+        const query = n.id && n.id !== state.local?.id
+          ? "?forward=" + encodeURIComponent(n.id) : "";
+        try {
+          return await request(
+            "status/upstream/endpoints/" + encodeURIComponent(e.id) + query);
+        } catch {
+          // An unreachable node shouldn't blank out the others.
+          return null;
+        }
+      }));
+
+      // The drawer may have been closed or moved to another endpoint while
+      // the requests were in flight.
+      const el = $("ep-upstreams");
+      if (!el || el.dataset.endpoint !== e.id) return;
+      el.innerHTML = nodes.map((n, i) => upstreamNodeHTML(n, conns[i])).join("");
     }
 
     function nodeDrawer(id) {
