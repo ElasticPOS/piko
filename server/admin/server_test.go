@@ -256,7 +256,7 @@ func TestServer_Authentication(t *testing.T) {
 		}()
 		defer s.Shutdown(context.TODO())
 
-		url := fmt.Sprintf("http://%s/health", ln.Addr().String())
+		url := fmt.Sprintf("http://%s/metrics", ln.Addr().String())
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
 		req.Header.Add("Authorization", "Bearer 123")
 
@@ -291,7 +291,7 @@ func TestServer_Authentication(t *testing.T) {
 		}()
 		defer s.Shutdown(context.TODO())
 
-		url := fmt.Sprintf("http://%s/health", ln.Addr().String())
+		url := fmt.Sprintf("http://%s/metrics", ln.Addr().String())
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
 		req.Header.Add("Authorization", "Bearer 123")
 
@@ -301,6 +301,81 @@ func TestServer_Authentication(t *testing.T) {
 		defer resp.Body.Close()
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	})
+
+	// Health checks can't send a token, so the probes must stay reachable
+	// while everything else on the admin server is gated.
+	t.Run("probes bypass auth", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		verifier := auth.NewMultiTenantVerifier(&fakeVerifier{
+			handler: func(_ string) (*auth.Token, error) {
+				assert.Fail(t, "probes must not be authenticated")
+				return nil, auth.ErrInvalidToken
+			},
+		}, nil)
+
+		s := NewServer(
+			nil,
+			prometheus.NewRegistry(),
+			verifier,
+			nil,
+			log.NewNopLogger(),
+		)
+		s.SetReady(true)
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		client := &http.Client{}
+		for _, path := range []string{"/health", "/ready"} {
+			url := fmt.Sprintf("http://%s%s", ln.Addr().String(), path)
+			// No Authorization header.
+			req, _ := http.NewRequest(http.MethodGet, url, nil)
+
+			resp, err := client.Do(req)
+			assert.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode, path)
+		}
+	})
+
+	t.Run("panel and pprof are gated", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		verifier := auth.NewMultiTenantVerifier(&fakeVerifier{
+			handler: func(_ string) (*auth.Token, error) {
+				return nil, auth.ErrInvalidToken
+			},
+		}, nil)
+
+		s := NewServer(
+			nil,
+			prometheus.NewRegistry(),
+			verifier,
+			nil,
+			log.NewNopLogger(),
+		)
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		client := &http.Client{}
+		for _, path := range []string{"/", "/dashboard", "/debug/pprof/", "/metrics"} {
+			url := fmt.Sprintf("http://%s%s", ln.Addr().String(), path)
+			req, _ := http.NewRequest(http.MethodGet, url, nil)
+
+			resp, err := client.Do(req)
+			assert.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, path)
+		}
 	})
 }
 

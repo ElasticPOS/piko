@@ -96,6 +96,27 @@ else
     echo "Upstream JWT auth: DISABLED (KEYTANA_PUBLIC_KEY not set)"
 fi
 
+# JWT auth on the admin port (8002). That port serves the web panel, /metrics,
+# /status and /debug/pprof, and is published publicly for the panel, so without
+# this anyone can read cluster state or pull heap and goroutine dumps
+# (/debug/pprof/profile also pins a CPU for 30s per request).
+#
+# Deliberately NOT the keytana key: signing admin access with the licence key
+# would make every customer's licence an admin credential. Use a separate
+# operator secret:
+#   fly secrets set ADMIN_HMAC_SECRET="$(openssl rand -hex 32)"
+# then call the admin API with a JWT signed by it (HS256):
+#   curl -H "Authorization: Bearer <jwt>" https://<app>:8002/status/cluster/nodes
+#
+# /health and /ready stay unauthenticated so Fly's http_check keeps passing.
+# When unset, auth stays disabled so the panel is reachable in a browser.
+if [ -n "$ADMIN_HMAC_SECRET" ]; then
+    echo "Admin JWT auth: ENABLED (HMAC)"
+    set -- "$@" --admin.auth.hmac-secret-key="${ADMIN_HMAC_SECRET}"
+else
+    echo "Admin JWT auth: DISABLED (ADMIN_HMAC_SECRET not set)"
+fi
+
 echo "Starting Piko server..."
 echo "  Node ID prefix: ${FLY_MACHINE_ID:-local}-"
 echo "  Advertise IP: $ADVERTISE_IP"

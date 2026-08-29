@@ -67,6 +67,17 @@ func NewServer(
 	// Recover from panics.
 	router.Use(gin.CustomRecoveryWithWriter(nil, server.panicRoute))
 
+	// Register the liveness and readiness probes before any authentication
+	// middleware, since external health checks (such as Fly.io's) can't send
+	// a token and gating them would take the node out of service. They expose
+	// nothing but whether this node is serving.
+	//
+	// Gin binds a route's middleware at registration time, so registering
+	// them here is what exempts them. They aren't forwarded to other nodes
+	// either, which nothing relies on.
+	router.GET("/health", server.healthRoute)
+	router.GET("/ready", server.readyRoute)
+
 	if verifier != nil {
 		authMiddleware := middleware.NewAuth(verifier, logger)
 		router.Use(authMiddleware.Verify)
@@ -117,9 +128,6 @@ func (s *Server) SetReady(ready bool) {
 
 func (s *Server) registerRoutes(router *gin.Engine) {
 	s.registerWeb(router)
-
-	router.GET("/health", s.healthRoute)
-	router.GET("/ready", s.readyRoute)
 
 	if s.registry != nil {
 		router.GET("/metrics", s.metricsHandler())
