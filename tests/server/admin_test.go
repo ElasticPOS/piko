@@ -58,6 +58,9 @@ func TestAdmin(t *testing.T) {
 }
 
 // Tests admin server authentication.
+//
+// Note the liveness and readiness probes are exempt, so the authenticated
+// routes are tested with a status route.
 func TestAdmin_Auth(t *testing.T) {
 	endpointClaims := auth.JWTClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -81,7 +84,7 @@ func TestAdmin_Auth(t *testing.T) {
 		tokenString, err := token.SignedString([]byte(secretKey))
 		assert.NoError(t, err)
 
-		url := fmt.Sprintf("http://%s/health", node.AdminAddr())
+		url := fmt.Sprintf("http://%s/status/cluster/nodes", node.AdminAddr())
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
 		req.Header.Add("Authorization", "Bearer "+tokenString)
 
@@ -107,7 +110,7 @@ func TestAdmin_Auth(t *testing.T) {
 		tokenString, err := token.SignedString([]byte("invalid-key"))
 		assert.NoError(t, err)
 
-		url := fmt.Sprintf("http://%s/health", node.AdminAddr())
+		url := fmt.Sprintf("http://%s/status/cluster/nodes", node.AdminAddr())
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
 		req.Header.Add("Authorization", "Bearer "+tokenString)
 
@@ -119,6 +122,27 @@ func TestAdmin_Auth(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 	})
 
+	// Tests the liveness and readiness probes are exempt from authentication,
+	// as external health checks (such as Fly.io's) can't send a token and
+	// gating them would take the node out of service.
+	t.Run("probes exempt", func(t *testing.T) {
+		secretKey := generateTestHSKey()
+		node := cluster.NewNode(cluster.WithAuthConfig(auth.Config{
+			HMACSecretKey: string(secretKey),
+		}))
+		node.Start()
+		defer node.Stop()
+
+		for _, path := range []string{"/health", "/ready"} {
+			resp, err := http.Get("http://" + node.AdminAddr() + path)
+			if !assert.NoError(t, err) {
+				continue
+			}
+			assert.Equal(t, http.StatusOK, resp.StatusCode, path)
+			resp.Body.Close()
+		}
+	})
+
 	// Tests an unauthenticated client attempting to connect.
 	t.Run("unauthenticated", func(t *testing.T) {
 		secretKey := generateTestHSKey()
@@ -128,7 +152,7 @@ func TestAdmin_Auth(t *testing.T) {
 		node.Start()
 		defer node.Stop()
 
-		url := fmt.Sprintf("http://%s/health", node.AdminAddr())
+		url := fmt.Sprintf("http://%s/status/cluster/nodes", node.AdminAddr())
 		req, _ := http.NewRequest(http.MethodGet, url, nil)
 
 		client := &http.Client{}
