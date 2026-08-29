@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"testing"
@@ -343,7 +344,7 @@ func TestServer_Authentication(t *testing.T) {
 		}
 	})
 
-	t.Run("panel and pprof are gated", func(t *testing.T) {
+	t.Run("data routes are gated", func(t *testing.T) {
 		ln, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
 
@@ -366,7 +367,7 @@ func TestServer_Authentication(t *testing.T) {
 		defer s.Shutdown(context.TODO())
 
 		client := &http.Client{}
-		for _, path := range []string{"/", "/dashboard", "/debug/pprof/", "/metrics"} {
+		for _, path := range []string{"/debug/pprof/", "/metrics"} {
 			url := fmt.Sprintf("http://%s%s", ln.Addr().String(), path)
 			req, _ := http.NewRequest(http.MethodGet, url, nil)
 
@@ -375,6 +376,51 @@ func TestServer_Authentication(t *testing.T) {
 			defer resp.Body.Close()
 
 			assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, path)
+		}
+	})
+
+	// A browser can't attach an 'Authorization' header to a top-level
+	// navigation, so the panel shell must load unauthenticated. It contains no
+	// cluster data: it prompts for a credential and attaches it to the API
+	// calls it makes, which are gated by the test above.
+	t.Run("panel shell bypasses auth", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		verifier := auth.NewMultiTenantVerifier(&fakeVerifier{
+			handler: func(_ string) (*auth.Token, error) {
+				assert.Fail(t, "the panel shell must not be authenticated")
+				return nil, auth.ErrInvalidToken
+			},
+		}, nil)
+
+		s := NewServer(
+			nil,
+			prometheus.NewRegistry(),
+			verifier,
+			nil,
+			log.NewNopLogger(),
+		)
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		client := &http.Client{}
+		for _, path := range []string{"/", "/dashboard"} {
+			url := fmt.Sprintf("http://%s%s", ln.Addr().String(), path)
+			req, _ := http.NewRequest(http.MethodGet, url, nil)
+
+			resp, err := client.Do(req)
+			assert.NoError(t, err)
+			defer resp.Body.Close()
+
+			assert.Equal(t, http.StatusOK, resp.StatusCode, path)
+			assert.Equal(t, "text/html; charset=utf-8", resp.Header.Get("Content-Type"), path)
+
+			body, err := io.ReadAll(resp.Body)
+			assert.NoError(t, err)
+			assert.Contains(t, string(body), "Piko Admin", path)
 		}
 	})
 }

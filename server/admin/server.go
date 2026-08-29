@@ -78,6 +78,10 @@ func NewServer(
 	router.GET("/health", server.healthRoute)
 	router.GET("/ready", server.readyRoute)
 
+	// The panel shell is static HTML with no cluster data, so it is also
+	// registered before the authentication middleware. See registerWeb.
+	server.registerWeb(router)
+
 	if verifier != nil {
 		authMiddleware := middleware.NewAuth(verifier, logger)
 		router.Use(authMiddleware.Verify)
@@ -127,8 +131,6 @@ func (s *Server) SetReady(ready bool) {
 }
 
 func (s *Server) registerRoutes(router *gin.Engine) {
-	s.registerWeb(router)
-
 	if s.registry != nil {
 		router.GET("/metrics", s.metricsHandler())
 	}

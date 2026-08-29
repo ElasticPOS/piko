@@ -3,187 +3,1366 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>Piko Admin</title>
   <style>
+    /* ---------- tokens ---------------------------------------------------- */
     :root {
-      --bg: #0d1117;
-      --panel: #161b22;
-      --border: #30363d;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #58a6ff;
-      --green: #3fb950;
-      --red: #f85149;
-      --yellow: #d29922;
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --surface-2: #f0f2f5;
+      --surface-3: #e7eaef;
+      --border: #dbe0e7;
+      --border-strong: #c3cad4;
+      --text: #0f1720;
+      --muted: #5c6672;
+      --faint: #8a94a1;
+      --accent: #1f6feb;
+      --accent-soft: rgba(31, 111, 235, .1);
+      --ok: #148f47;
+      --ok-soft: rgba(20, 143, 71, .12);
+      --warn: #9a6400;
+      --warn-soft: rgba(154, 100, 0, .12);
+      --err: #cf222e;
+      --err-soft: rgba(207, 34, 46, .1);
+      --shadow: 0 1px 2px rgba(16, 23, 32, .06), 0 4px 12px rgba(16, 23, 32, .05);
+      --shadow-lg: 0 12px 40px rgba(16, 23, 32, .18);
+      --radius: 10px;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
     }
+    :root[data-theme="dark"], :root:not([data-theme="light"]) {
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { color-scheme: dark; }
+    }
+    /* Dark palette: applied by system preference unless the user forced light,
+       and always when the user forced dark. Both selectors carry the same
+       block so the toggle wins in either direction. */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0a0d13;
+        --surface: #11151d;
+        --surface-2: #161b25;
+        --surface-3: #1d2330;
+        --border: #222a36;
+        --border-strong: #303a4a;
+        --text: #e5ebf2;
+        --muted: #909bab;
+        --faint: #6b7686;
+        --accent: #4d8ffb;
+        --accent-soft: rgba(77, 143, 251, .14);
+        --ok: #3fb950;
+        --ok-soft: rgba(63, 185, 80, .14);
+        --warn: #d29922;
+        --warn-soft: rgba(210, 153, 34, .14);
+        --err: #f85149;
+        --err-soft: rgba(248, 81, 73, .14);
+        --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .3);
+        --shadow-lg: 0 16px 48px rgba(0, 0, 0, .55);
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0a0d13;
+      --surface: #11151d;
+      --surface-2: #161b25;
+      --surface-3: #1d2330;
+      --border: #222a36;
+      --border-strong: #303a4a;
+      --text: #e5ebf2;
+      --muted: #909bab;
+      --faint: #6b7686;
+      --accent: #4d8ffb;
+      --accent-soft: rgba(77, 143, 251, .14);
+      --ok: #3fb950;
+      --ok-soft: rgba(63, 185, 80, .14);
+      --warn: #d29922;
+      --warn-soft: rgba(210, 153, 34, .14);
+      --err: #f85149;
+      --err-soft: rgba(248, 81, 73, .14);
+      --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 4px 14px rgba(0, 0, 0, .3);
+      --shadow-lg: 0 16px 48px rgba(0, 0, 0, .55);
+    }
+
+    /* ---------- base ------------------------------------------------------ */
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
     body {
       margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
-      font-size: 14px;
+      font: 14px/1.5 var(--sans);
+      -webkit-font-smoothing: antialiased;
     }
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 24px;
-      border-bottom: 1px solid var(--border);
-      background: var(--panel);
-    }
-    header h1 { font-size: 18px; margin: 0; font-weight: 600; }
-    header .meta { color: var(--muted); font-size: 12px; }
-    main { padding: 24px; max-width: 1100px; margin: 0 auto; }
-    .cards { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-    .card {
-      flex: 1; min-width: 140px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 16px;
-    }
-    .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-    .card .value { font-size: 28px; font-weight: 600; margin-top: 4px; }
-    section { margin-bottom: 32px; }
-    section h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 12px; }
-    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); }
-    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
-    tr:last-child td { border-bottom: none; }
-    td.mono, th.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
-    .badge.active { background: rgba(63,185,80,.15); color: var(--green); }
-    .badge.down, .badge.left { background: rgba(248,81,73,.15); color: var(--red); }
-    .badge.other { background: rgba(210,153,34,.15); color: var(--yellow); }
-    .empty { color: var(--muted); padding: 14px; }
-    .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-    .dot.ok { background: var(--green); }
-    .dot.err { background: var(--red); }
+    h1, h2, h3 { margin: 0; font-weight: 600; }
+    button { font: inherit; color: inherit; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .links { display: flex; gap: 16px; margin-top: 8px; }
+    code, .mono { font-family: var(--mono); font-size: .92em; }
+    [hidden] { display: none !important; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+    ::selection { background: var(--accent-soft); }
+
+    /* ---------- top bar --------------------------------------------------- */
+    .topbar {
+      position: sticky; top: 0; z-index: 40;
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 20px; height: 56px;
+      background: color-mix(in srgb, var(--surface) 88%, transparent);
+      backdrop-filter: saturate(140%) blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -.01em; }
+    .brand svg { display: block; }
+    .brand .sub {
+      font-weight: 500; color: var(--faint); font-size: 12px;
+      padding-left: 10px; margin-left: 2px; border-left: 1px solid var(--border);
+      font-family: var(--mono);
+      max-width: 30ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .topbar .spacer { flex: 1; }
+    .live {
+      display: inline-flex; align-items: center; gap: 7px;
+      font-size: 12px; color: var(--muted); white-space: nowrap;
+    }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); position: relative; }
+    .pulse::after {
+      content: ""; position: absolute; inset: 0; border-radius: 50%;
+      background: inherit; animation: pulse 2s ease-out infinite;
+    }
+    .pulse.warn { background: var(--warn); }
+    .pulse.err { background: var(--err); }
+    .pulse.idle { background: var(--faint); }
+    .pulse.idle::after, .pulse.err::after { animation: none; }
+    @keyframes pulse { 0% { opacity: .55; transform: scale(1); } 100% { opacity: 0; transform: scale(2.6); } }
+    @media (prefers-reduced-motion: reduce) { .pulse::after { animation: none; } }
+
+    /* ---------- controls -------------------------------------------------- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      height: 32px; padding: 0 11px;
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      cursor: pointer; white-space: nowrap;
+      transition: background .12s ease, border-color .12s ease, transform .06s ease;
+    }
+    .btn:hover { background: var(--surface-2); border-color: var(--border-strong); }
+    .btn:active { transform: translateY(1px); }
+    .btn.icon { width: 32px; padding: 0; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 550; }
+    .btn.primary:hover { filter: brightness(1.07); background: var(--accent); }
+    .btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+    .btn.ghost:hover { background: var(--surface-2); color: var(--text); }
+    .btn.tiny { height: 26px; padding: 0 8px; font-size: 12px; border-radius: 6px; }
+    .btn[disabled] { opacity: .5; pointer-events: none; }
+    select.btn { padding-right: 6px; -webkit-appearance: none; appearance: none; text-align: center; }
+    .input {
+      height: 32px; padding: 0 10px; width: 100%;
+      background: var(--surface); color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+    }
+    .input::placeholder { color: var(--faint); }
+    .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    .search { position: relative; max-width: 320px; flex: 1; }
+    .search .input { padding-left: 30px; }
+    .search svg { position: absolute; left: 9px; top: 8px; color: var(--faint); pointer-events: none; }
+
+    /* ---------- tabs ------------------------------------------------------ */
+    .tabs { display: flex; gap: 2px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; }
+    .tab {
+      appearance: none; background: none; border: none; cursor: pointer;
+      padding: 11px 12px 9px; margin-bottom: -1px;
+      color: var(--muted); font-weight: 550; font-size: 13px;
+      border-bottom: 2px solid transparent; white-space: nowrap;
+    }
+    .tab:hover { color: var(--text); }
+    .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+    .tab .count {
+      display: inline-block; margin-left: 6px; padding: 0 6px;
+      background: var(--surface-3); color: var(--muted);
+      border-radius: 10px; font-size: 11px; font-weight: 600;
+    }
+
+    /* ---------- layout ---------------------------------------------------- */
+    main { max-width: 1180px; margin: 0 auto; padding: 22px 20px 64px; }
+    .section-head { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; flex-wrap: wrap; }
+    .section-head h2 { font-size: 15px; }
+    .section-head .hint { color: var(--faint); font-size: 12px; }
+    .grid { display: grid; gap: 14px; }
+    .tiles { grid-template-columns: repeat(auto-fit, minmax(196px, 1fr)); margin-bottom: 18px; }
+    .cols-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .card > header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+    }
+    .card > header h3 { font-size: 13px; letter-spacing: .01em; }
+    .card > header .spacer { flex: 1; }
+    .card .body { padding: 16px; }
+
+    /* ---------- tiles ----------------------------------------------------- */
+    .tile { padding: 14px 16px; position: relative; overflow: hidden; }
+    .tile .label { color: var(--muted); font-size: 12px; font-weight: 550; }
+    .tile .value { font-size: 30px; font-weight: 640; letter-spacing: -.02em; line-height: 1.15; margin-top: 6px; font-variant-numeric: tabular-nums; }
+    .tile .value small { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+    .tile .note { font-size: 12px; color: var(--faint); margin-top: 3px; min-height: 18px; }
+    .tile .spark { position: absolute; right: 0; bottom: 0; left: 0; height: 34px; opacity: .5; pointer-events: none; }
+    .tile.attention { border-color: color-mix(in srgb, var(--warn) 45%, var(--border)); }
+
+    /* ---------- tables ---------------------------------------------------- */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    thead th {
+      position: sticky; top: 0; background: var(--surface);
+      color: var(--muted); font-size: 11px; font-weight: 650;
+      text-transform: uppercase; letter-spacing: .05em; white-space: nowrap;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr.clickable { cursor: pointer; }
+    tbody tr.clickable:hover { background: var(--surface-2); }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .empty { padding: 34px 16px; text-align: center; color: var(--muted); }
+    .empty .big { font-size: 15px; color: var(--text); font-weight: 550; margin-bottom: 5px; }
+    .empty code { display: inline-block; margin-top: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; text-align: left; }
+
+    /* ---------- bits ------------------------------------------------------ */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 8px; border-radius: 999px;
+      font-size: 11.5px; font-weight: 600; white-space: nowrap;
+    }
+    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge.ok { background: var(--ok-soft); color: var(--ok); }
+    .badge.warn { background: var(--warn-soft); color: var(--warn); }
+    .badge.err { background: var(--err-soft); color: var(--err); }
+    .badge.flat::before { display: none; }
+    .badge.neutral { background: var(--surface-3); color: var(--muted); }
+    .chip {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 2px 8px; margin: 2px 4px 2px 0;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 6px; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    }
+    .banner {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 11px 14px; margin-bottom: 16px;
+      border: 1px solid; border-radius: var(--radius); font-size: 13px;
+    }
+    .banner.warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 40%, transparent); color: var(--text); }
+    .banner.err { background: var(--err-soft); border-color: color-mix(in srgb, var(--err) 40%, transparent); color: var(--text); }
+    .banner b { font-weight: 650; }
+    .banner .spacer { flex: 1; }
+    .copy {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 10px; margin-top: 8px;
+    }
+    .copy code { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; color: var(--text); }
+    .kv { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 8px 16px; font-size: 13px; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+    .bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; display: flex; }
+    .bar span { height: 100%; }
+
+    /* ---------- drawer ---------------------------------------------------- */
+    .scrim { position: fixed; inset: 0; background: rgba(6, 9, 14, .45); z-index: 50; }
+    .drawer {
+      position: fixed; top: 0; right: 0; bottom: 0; z-index: 51;
+      width: min(520px, 100%); background: var(--surface);
+      border-left: 1px solid var(--border); box-shadow: var(--shadow-lg);
+      display: flex; flex-direction: column;
+      animation: slide .16s ease-out;
+    }
+    @keyframes slide { from { transform: translateX(16px); opacity: .4; } }
+    @media (prefers-reduced-motion: reduce) { .drawer { animation: none; } }
+    .drawer header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .drawer .body { padding: 16px; overflow-y: auto; }
+    .drawer h4 { margin: 20px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+    .drawer h4:first-child { margin-top: 0; }
+    pre.raw {
+      margin: 0; padding: 12px; overflow-x: auto;
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+      font-family: var(--mono); font-size: 12px; line-height: 1.5;
+    }
+
+    /* ---------- login ----------------------------------------------------- */
+    .gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .gate .card { width: min(430px, 100%); }
+    .gate .body { padding: 22px; }
+    .gate h1 { font-size: 17px; margin-bottom: 6px; }
+    .gate p { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    .field .help { font-size: 12px; color: var(--faint); margin-top: 6px; }
+    .seg { display: flex; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 9px; margin-bottom: 16px; }
+    .seg button {
+      flex: 1; appearance: none; border: none; background: none; cursor: pointer;
+      padding: 6px 8px; border-radius: 6px; font-size: 12.5px; font-weight: 550; color: var(--muted);
+    }
+    .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+    .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+
+    /* ---------- toasts & misc --------------------------------------------- */
+    #toasts { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 60; display: grid; gap: 8px; justify-items: center; }
+    .toast {
+      padding: 9px 14px; border-radius: 8px; font-size: 13px;
+      background: var(--text); color: var(--bg); box-shadow: var(--shadow-lg);
+      animation: rise .15s ease-out;
+    }
+    .toast.err { background: var(--err); color: #fff; }
+    @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+    .skeleton { background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; border-radius: 6px; height: 12px; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+    kbd {
+      display: inline-block; min-width: 20px; padding: 1px 5px; text-align: center;
+      background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px;
+      border-radius: 5px; font-family: var(--mono); font-size: 11px; color: var(--muted);
+    }
+    .shortcuts { position: fixed; inset: 0; z-index: 55; display: grid; place-items: center; padding: 24px; background: rgba(6, 9, 14, .45); }
+    .shortcuts .card { width: min(380px, 100%); }
+    .shortcuts .row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; font-size: 13px; }
+    .footnote { color: var(--faint); font-size: 12px; margin-top: 18px; text-align: center; }
+
+    @media (max-width: 640px) {
+      .topbar { padding: 0 12px; gap: 10px; }
+      .brand .sub, .live .text { display: none; }
+      main { padding: 16px 12px 48px; }
+      th, td { padding: 9px 12px; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div>
-      <h1>Piko Admin</h1>
-      <div class="links">
-        <a href="metrics" target="_blank">metrics</a>
-        <a href="status/cluster/nodes" target="_blank">cluster API</a>
-        <a href="status/upstream/endpoints" target="_blank">endpoints API</a>
+  <!-- ================= login gate ================= -->
+  <div class="gate" id="gate" hidden>
+    <div class="card">
+      <div class="body">
+        <h1>Piko Admin</h1>
+        <p>This node requires a token to read cluster status.</p>
+
+        <div class="seg" role="group" aria-label="Credential type">
+          <button type="button" id="mode-token" aria-pressed="true">Paste a token</button>
+          <button type="button" id="mode-secret" aria-pressed="false">Use signing secret</button>
+        </div>
+
+        <form id="gate-form">
+          <div class="field" id="field-token">
+            <label for="gate-token">Admin JWT</label>
+            <input class="input" id="gate-token" type="password" autocomplete="off"
+                   spellcheck="false" placeholder="eyJhbGciOiJIUzI1NiIs…" />
+            <div class="help">Any JWT the admin server accepts, sent as <code>Authorization: Bearer</code>.</div>
+          </div>
+
+          <div class="field" id="field-secret" hidden>
+            <label for="gate-secret">HMAC signing secret</label>
+            <input class="input" id="gate-secret" type="password" autocomplete="off"
+                   spellcheck="false" placeholder="admin.auth.hmac-secret-key" />
+            <div class="help">
+              Short-lived tokens are minted in this browser (HS256, 5&nbsp;min) — the secret is
+              never sent over the network. Only works when the server verifies HMAC.
+            </div>
+          </div>
+
+          <label class="check">
+            <input type="checkbox" id="gate-remember" />
+            Keep me signed in on this browser
+          </label>
+
+          <div id="gate-error" class="banner err" hidden></div>
+
+          <button class="btn primary" type="submit" style="width:100%;height:36px">Open panel</button>
+        </form>
+
+        <div class="footnote">
+          Serving <span class="mono" id="gate-origin"></span>
+        </div>
       </div>
     </div>
-    <div class="meta">
-      <span id="health"><span class="dot err"></span>connecting…</span>
-      <div id="updated"></div>
+  </div>
+
+  <!-- ================= app ================= -->
+  <div id="app" hidden>
+    <div class="topbar">
+      <div class="brand">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M3 10h4l2.5-6 3.5 12 2.5-6h2" stroke="var(--accent)" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        Piko
+        <span class="sub" id="brand-node" title="Local node"></span>
+      </div>
+
+      <div class="spacer"></div>
+
+      <span class="live" id="live" aria-live="polite">
+        <span class="pulse idle" id="live-dot"></span>
+        <span class="text" id="live-text">connecting…</span>
+      </span>
+
+      <select class="btn" id="interval" title="Auto-refresh interval" aria-label="Auto-refresh interval">
+        <option value="0">off</option>
+        <option value="2000">2s</option>
+        <option value="5000" selected>5s</option>
+        <option value="15000">15s</option>
+        <option value="60000">60s</option>
+      </select>
+
+      <button class="btn icon" id="refresh" title="Refresh now (r)" aria-label="Refresh now">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13 2v3h-3" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+
+      <button class="btn icon" id="theme" title="Toggle theme" aria-label="Toggle theme">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M13.2 9.7A5.5 5.5 0 0 1 6.3 2.8a5.5 5.5 0 1 0 6.9 6.9Z" stroke="currentColor"
+                stroke-width="1.5" stroke-linejoin="round" />
+        </svg>
+      </button>
+
+      <button class="btn icon" id="signout" title="Sign out" aria-label="Sign out" hidden>
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M6 14H3V2h3M10.5 11 13.5 8l-3-3M13 8H6" stroke="currentColor" stroke-width="1.5"
+                stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
     </div>
-  </header>
 
-  <main>
-    <div class="cards">
-      <div class="card"><div class="label">Nodes</div><div class="value" id="stat-nodes">–</div></div>
-      <div class="card"><div class="label">Active endpoints</div><div class="value" id="stat-endpoints">–</div></div>
-      <div class="card"><div class="label">Upstreams</div><div class="value" id="stat-upstreams">–</div></div>
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-view="overview" aria-selected="true">Overview</button>
+      <button class="tab" role="tab" data-view="endpoints" aria-selected="false">
+        Endpoints<span class="count" id="tab-endpoints">0</span>
+      </button>
+      <button class="tab" role="tab" data-view="nodes" aria-selected="false">
+        Nodes<span class="count" id="tab-nodes">0</span>
+      </button>
+      <button class="tab" role="tab" data-view="metrics" aria-selected="false">Metrics</button>
+    </nav>
+
+    <main>
+      <div id="alerts"></div>
+
+      <!-- ---------- overview ---------- -->
+      <section id="view-overview">
+        <div class="grid tiles">
+          <div class="card tile">
+            <div class="label">Endpoints</div>
+            <div class="value" id="t-endpoints">–</div>
+            <div class="note" id="t-endpoints-note">across the cluster</div>
+          </div>
+          <div class="card tile">
+            <div class="label">Upstreams</div>
+            <div class="value" id="t-upstreams">–</div>
+            <div class="note" id="t-upstreams-note">connected listeners</div>
+          </div>
+          <div class="card tile">
+            <div class="label">Nodes</div>
+            <div class="value" id="t-nodes">–</div>
+            <div class="note" id="t-nodes-note">in cluster state</div>
+          </div>
+          <div class="card tile">
+            <div class="label">Proxy traffic</div>
+            <div class="value" id="t-rps">–</div>
+            <div class="note" id="t-rps-note">requests / second</div>
+            <svg class="spark" id="t-rps-spark" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true"></svg>
+          </div>
+        </div>
+
+        <div class="grid cols-2">
+          <div class="card">
+            <header>
+              <h3>Endpoints</h3>
+              <div class="spacer"></div>
+              <button class="btn tiny ghost" data-goto="endpoints">View all</button>
+            </header>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Endpoint</th><th class="num">Upstreams</th><th class="num">Nodes</th></tr>
+                </thead>
+                <tbody id="ov-endpoints"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <header>
+              <h3>Cluster</h3>
+              <div class="spacer"></div>
+              <button class="btn tiny ghost" data-goto="nodes">View all</button>
+            </header>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Node</th><th>Status</th><th class="num">Endpoints</th><th class="num">Upstreams</th></tr>
+                </thead>
+                <tbody id="ov-nodes"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <header><h3>Requests by status</h3><div class="spacer"></div>
+            <span class="hint" id="rq-window">since node start</span>
+          </header>
+          <div class="body" id="ov-requests"></div>
+        </div>
+      </section>
+
+      <!-- ---------- endpoints ---------- -->
+      <section id="view-endpoints" hidden>
+        <div class="section-head">
+          <div class="search">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" />
+              <path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            <input class="input" id="endpoint-search" type="search" placeholder="Filter endpoints  (/)" />
+          </div>
+          <div class="spacer" style="flex:1"></div>
+          <span class="hint" id="endpoint-hint"></span>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Endpoint</th><th class="num">Upstreams</th><th>Served by</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="endpoints-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- nodes ---------- -->
+      <section id="view-nodes" hidden>
+        <div class="section-head">
+          <div class="search">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" />
+              <path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+            </svg>
+            <input class="input" id="node-search" type="search" placeholder="Filter nodes  (/)" />
+          </div>
+          <div class="spacer" style="flex:1"></div>
+          <span class="hint">Click a node for detail</span>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Node ID</th><th>Status</th><th>Proxy address</th>
+                  <th class="num">Endpoints</th><th class="num">Upstreams</th>
+                </tr>
+              </thead>
+              <tbody id="nodes-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- metrics ---------- -->
+      <section id="view-metrics" hidden>
+        <div class="grid tiles" id="metric-tiles"></div>
+        <div class="grid cols-2">
+          <div class="card">
+            <header><h3>Proxy latency</h3><div class="spacer"></div>
+              <span class="hint">estimated from histogram buckets</span>
+            </header>
+            <div class="body" id="latency-body"></div>
+          </div>
+          <div class="card">
+            <header><h3>Runtime</h3></header>
+            <div class="body" id="runtime-body"></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <header>
+            <h3>All metrics</h3>
+            <div class="spacer"></div>
+            <div class="search" style="max-width:220px">
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" />
+                <path d="m10.5 10.5 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+              </svg>
+              <input class="input" id="metric-search" type="search" placeholder="Filter series" />
+            </div>
+          </header>
+          <div class="body" style="padding:0">
+            <pre class="raw" id="metrics-raw" style="border:none;border-radius:0;max-height:420px;overflow:auto"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="drawer-root"></div>
+  <div id="toasts" aria-live="polite"></div>
+
+  <div class="shortcuts" id="shortcuts" hidden>
+    <div class="card">
+      <header><h3>Keyboard shortcuts</h3><div class="spacer"></div>
+        <button class="btn tiny ghost" id="shortcuts-close">Close</button>
+      </header>
+      <div class="body">
+        <div class="row"><span>Refresh now</span><kbd>r</kbd></div>
+        <div class="row"><span>Focus filter</span><kbd>/</kbd></div>
+        <div class="row"><span>Switch tab</span><span><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></span></div>
+        <div class="row"><span>Toggle theme</span><kbd>t</kbd></div>
+        <div class="row"><span>Close / clear</span><kbd>Esc</kbd></div>
+        <div class="row"><span>This help</span><kbd>?</kbd></div>
+      </div>
     </div>
-
-    <section>
-      <h2>Cluster nodes</h2>
-      <table>
-        <thead>
-          <tr><th>ID</th><th>Status</th><th class="mono">Proxy addr</th><th class="mono">Admin addr</th><th>Endpoints</th><th>Upstreams</th></tr>
-        </thead>
-        <tbody id="nodes-body"><tr><td colspan="6" class="empty">Loading…</td></tr></tbody>
-      </table>
-    </section>
-
-    <section>
-      <h2>Local endpoints</h2>
-      <table>
-        <thead><tr><th>Endpoint ID</th><th>Listeners</th></tr></thead>
-        <tbody id="endpoints-body"><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
-      </table>
-    </section>
-  </main>
-
+  </div>
   <script>
-    // Resolve paths relative to where the panel is served so it works behind
-    // a path prefix / reverse proxy.
-    const base = location.pathname.replace(/[^/]*$/, "");
-    const api = (p) => base + p;
+  (() => {
+    "use strict";
 
-    async function getJSON(path) {
-      const res = await fetch(api(path), { headers: { "Accept": "application/json" } });
-      if (!res.ok) throw new Error(path + ": " + res.status);
-      return res.json();
-    }
+    // Paths are resolved relative to where the panel is served so the panel
+    // keeps working behind a path prefix or reverse proxy.
+    const BASE = location.pathname.replace(/[^/]*$/, "");
+    const api = (p) => BASE + p;
+    const $ = (id) => document.getElementById(id);
 
-    function statusBadge(status) {
-      const s = String(status || "").toLowerCase();
-      const cls = s === "active" ? "active" : (s === "down" || s === "left") ? "down" : "other";
-      return `<span class="badge ${cls}">${status || "unknown"}</span>`;
-    }
+    // ---------------------------------------------------------------- store
+    // Credentials live in sessionStorage by default and only move to
+    // localStorage when the operator opts in, so a shared machine doesn't keep
+    // an admin credential after the tab closes.
+    const store = {
+      get(k) { try { return localStorage.getItem(k) ?? sessionStorage.getItem(k); } catch { return null; } },
+      set(k, v, persist) {
+        try {
+          (persist ? localStorage : sessionStorage).setItem(k, v);
+          (persist ? sessionStorage : localStorage).removeItem(k);
+        } catch { /* private mode */ }
+      },
+      del(k) { try { localStorage.removeItem(k); sessionStorage.removeItem(k); } catch { /* ignore */ } },
+    };
 
-    function esc(s) {
-      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    }
+    const state = {
+      token: store.get("piko.token") || "",
+      secret: store.get("piko.secret") || "",
+      minted: { jwt: "", exp: 0 },
+      authed: true,          // until a 401 says otherwise
+      nodes: [],             // cluster node metadata (counts only)
+      details: {},           // node id -> full node (with endpoint map)
+      endpoints: [],         // aggregated across the cluster
+      local: null,
+      metrics: null,
+      history: [],           // { t, requests, byStatus }
+      view: "overview",
+      filters: { endpoint: "", node: "", metric: "" },
+      lastOk: 0,
+      lastErr: "",
+      loading: false,
+    };
 
-    async function refresh() {
-      // Health first so the indicator updates even if status calls fail.
+    // ----------------------------------------------------------------- util
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const num = (n) => (n ?? 0).toLocaleString();
+    const bytes = (n) => {
+      if (!n && n !== 0) return "–";
+      const u = ["B", "KiB", "MiB", "GiB"];
+      let i = 0;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return (i === 0 ? n : n.toFixed(1)) + " " + u[i];
+    };
+    const ago = (ts) => {
+      if (!ts) return "never";
+      const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+      if (s < 2) return "just now";
+      if (s < 60) return s + "s ago";
+      if (s < 3600) return Math.floor(s / 60) + "m ago";
+      return Math.floor(s / 3600) + "h ago";
+    };
+    const toast = (msg, kind) => {
+      const el = document.createElement("div");
+      el.className = "toast" + (kind === "err" ? " err" : "");
+      el.textContent = msg;
+      $("toasts").appendChild(el);
+      setTimeout(() => el.remove(), 2600);
+    };
+    const copy = async (text) => {
       try {
-        const h = await fetch(api("health"));
-        document.getElementById("health").innerHTML =
-          `<span class="dot ${h.ok ? "ok" : "err"}"></span>${h.ok ? "healthy" : "unhealthy"}`;
+        await navigator.clipboard.writeText(text);
+        toast("Copied");
       } catch {
-        document.getElementById("health").innerHTML = `<span class="dot err"></span>unreachable`;
+        // Clipboard needs a secure context; fall back to selecting the text.
+        toast("Copy failed — select the text manually", "err");
       }
+    };
 
-      try {
-        const nodes = await getJSON("status/cluster/nodes");
-        const tbody = document.getElementById("nodes-body");
-        if (!nodes.length) {
-          tbody.innerHTML = `<tr><td colspan="6" class="empty">No nodes</td></tr>`;
-        } else {
-          tbody.innerHTML = nodes.map((n) => `
-            <tr>
-              <td class="mono">${esc(n.id)}</td>
-              <td>${statusBadge(n.status)}</td>
-              <td class="mono">${esc(n.proxy_addr || "–")}</td>
-              <td class="mono">${esc(n.admin_addr || "–")}</td>
-              <td>${n.endpoints ?? 0}</td>
-              <td>${n.upstreams ?? 0}</td>
-            </tr>`).join("");
-        }
-        document.getElementById("stat-nodes").textContent = nodes.length;
-        document.getElementById("stat-upstreams").textContent =
-          nodes.reduce((a, n) => a + (n.upstreams || 0), 0);
-      } catch (e) {
-        document.getElementById("nodes-body").innerHTML =
-          `<tr><td colspan="6" class="empty">Failed to load nodes (${esc(e.message)})</td></tr>`;
-      }
+    // ------------------------------------------------------------------ jwt
+    // When the operator gives the HMAC signing secret rather than a token, the
+    // panel mints its own short-lived tokens here. The secret never leaves the
+    // browser; only the derived JWT is sent.
+    const b64url = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    const utf8 = (s) => new TextEncoder().encode(s);
 
-      try {
-        const endpoints = await getJSON("status/upstream/endpoints");
-        const ids = Object.keys(endpoints);
-        const tbody = document.getElementById("endpoints-body");
-        if (!ids.length) {
-          tbody.innerHTML = `<tr><td colspan="2" class="empty">No active endpoints</td></tr>`;
-        } else {
-          tbody.innerHTML = ids.sort().map((id) => `
-            <tr><td class="mono">${esc(id)}</td><td>${endpoints[id]}</td></tr>`).join("");
-        }
-        document.getElementById("stat-endpoints").textContent = ids.length;
-      } catch (e) {
-        document.getElementById("endpoints-body").innerHTML =
-          `<tr><td colspan="2" class="empty">Failed to load endpoints (${esc(e.message)})</td></tr>`;
-      }
-
-      document.getElementById("updated").textContent = "updated " + new Date().toLocaleTimeString();
+    async function mint(secret, ttl = 300) {
+      const header = b64url(utf8(JSON.stringify({ alg: "HS256", typ: "JWT" })));
+      const exp = Math.floor(Date.now() / 1000) + ttl;
+      const payload = b64url(utf8(JSON.stringify({ sub: "piko-admin-panel", exp })));
+      const key = await crypto.subtle.importKey(
+        "raw", utf8(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      const sig = await crypto.subtle.sign("HMAC", key, utf8(header + "." + payload));
+      return { jwt: `${header}.${payload}.${b64url(sig)}`, exp: exp * 1000 };
     }
 
+    async function bearer() {
+      if (state.token) return state.token;
+      if (!state.secret) return "";
+      // Re-mint a minute before expiry so a slow refresh can't race it.
+      if (state.minted.jwt && state.minted.exp - Date.now() > 60_000) return state.minted.jwt;
+      if (!crypto?.subtle) throw new Error("this browser needs HTTPS to mint tokens");
+      state.minted = await mint(state.secret);
+      return state.minted.jwt;
+    }
+
+    // ------------------------------------------------------------------ api
+    class Unauthorized extends Error {}
+
+    async function request(path, { text = false } = {}) {
+      const headers = { Accept: text ? "text/plain" : "application/json" };
+      const tok = await bearer();
+      if (tok) headers.Authorization = "Bearer " + tok;
+
+      const res = await fetch(api(path), { headers, cache: "no-store" });
+      if (res.status === 401) throw new Unauthorized("unauthorized");
+      if (res.status === 404) return null;           // route not mounted on this node
+      if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
+      return text ? res.text() : res.json();
+    }
+
+    // -------------------------------------------------------------- metrics
+    // Minimal Prometheus text-exposition parser: enough for gauges, counters
+    // and histogram buckets, ignoring HELP/TYPE lines.
+    function parseMetrics(text) {
+      const series = [];
+      for (const line of text.split("\n")) {
+        if (!line || line[0] === "#") continue;
+        const brace = line.indexOf("{");
+        let name, labels = {}, rest;
+        if (brace === -1) {
+          const sp = line.indexOf(" ");
+          if (sp === -1) continue;
+          name = line.slice(0, sp);
+          rest = line.slice(sp + 1);
+        } else {
+          name = line.slice(0, brace);
+          const close = line.lastIndexOf("}");
+          for (const kv of line.slice(brace + 1, close).split(/,(?=[a-zA-Z_])/)) {
+            const eq = kv.indexOf("=");
+            if (eq > 0) labels[kv.slice(0, eq)] = kv.slice(eq + 1).replace(/^"|"$/g, "");
+          }
+          rest = line.slice(close + 1).trim();
+        }
+        const value = parseFloat(rest);
+        if (!Number.isNaN(value)) series.push({ name, labels, value });
+      }
+      const index = new Map();
+      for (const s of series) {
+        if (!index.has(s.name)) index.set(s.name, []);
+        index.get(s.name).push(s);
+      }
+      return {
+        series,
+        all: (name) => index.get(name) || [],
+        sum: (name, match) => (index.get(name) || [])
+          .filter((s) => !match || match(s.labels))
+          .reduce((a, s) => a + s.value, 0),
+        one: (name) => (index.get(name) || [])[0]?.value,
+      };
+    }
+
+    function statusClass(code) {
+      const c = parseInt(code, 10);
+      if (c >= 500) return "5xx";
+      if (c >= 400) return "4xx";
+      if (c >= 300) return "3xx";
+      return "2xx";
+    }
+
+    // --------------------------------------------------------------- poller
+    async function refresh() {
+      if (state.loading) return;
+      state.loading = true;
+      renderLive();
+      try {
+        const nodes = await request("status/cluster/nodes");
+        if (nodes) {
+          state.nodes = nodes;
+          // Every node gossips its endpoint map, so one call per node from
+          // whichever node served us gives the whole cluster's endpoints —
+          // no forwarding needed.
+          const details = await Promise.all(nodes.map((n) =>
+            request("status/cluster/nodes/" + encodeURIComponent(n.id)).catch(() => null)));
+          state.details = {};
+          nodes.forEach((n, i) => { if (details[i]) state.details[n.id] = details[i]; });
+          state.local = await request("status/cluster/nodes/local").catch(() => null);
+          aggregateEndpoints();
+        } else {
+          // Cluster status isn't mounted (single node): fall back to the
+          // local upstream registry.
+          const local = await request("status/upstream/endpoints");
+          state.nodes = [];
+          state.endpoints = Object.entries(local || {})
+            .map(([id, n]) => ({ id, upstreams: n, nodes: [] }))
+            .sort((a, b) => a.id.localeCompare(b.id));
+        }
+
+        const raw = await request("metrics", { text: true });
+        if (raw) {
+          state.metrics = parseMetrics(raw);
+          recordHistory();
+        }
+
+        state.lastOk = Date.now();
+        state.lastErr = "";
+        state.authed = true;
+        showApp();
+      } catch (err) {
+        if (err instanceof Unauthorized) {
+          state.authed = false;
+          showGate(state.token || state.secret ? "That credential was rejected." : "");
+        } else {
+          state.lastErr = err.message || String(err);
+        }
+      } finally {
+        state.loading = false;
+        render();
+      }
+    }
+
+    function aggregateEndpoints() {
+      const map = new Map();
+      for (const node of Object.values(state.details)) {
+        for (const [id, listeners] of Object.entries(node.endpoints || {})) {
+          if (!map.has(id)) map.set(id, { id, upstreams: 0, nodes: [] });
+          const e = map.get(id);
+          e.upstreams += listeners;
+          e.nodes.push({ id: node.id, listeners, status: node.status });
+        }
+      }
+      state.endpoints = [...map.values()].sort(
+        (a, b) => b.upstreams - a.upstreams || a.id.localeCompare(b.id));
+    }
+
+    function recordHistory() {
+      const m = state.metrics;
+      const byStatus = {};
+      for (const s of m.all("piko_proxy_requests_total")) {
+        const k = statusClass(s.labels.status);
+        byStatus[k] = (byStatus[k] || 0) + s.value;
+      }
+      const total = Object.values(byStatus).reduce((a, b) => a + b, 0);
+      state.history.push({ t: Date.now(), requests: total, byStatus });
+      if (state.history.length > 90) state.history.shift();
+    }
+
+    // Requests/second between the two most recent samples.
+    function requestRate() {
+      const h = state.history;
+      if (h.length < 2) return null;
+      const a = h[h.length - 2], b = h[h.length - 1];
+      const dt = (b.t - a.t) / 1000;
+      if (dt <= 0) return null;
+      return Math.max(0, (b.requests - a.requests) / dt);
+    }
+
+    function rateSeries() {
+      const out = [];
+      for (let i = 1; i < state.history.length; i++) {
+        const a = state.history[i - 1], b = state.history[i];
+        const dt = (b.t - a.t) / 1000;
+        out.push(dt > 0 ? Math.max(0, (b.requests - a.requests) / dt) : 0);
+      }
+      return out;
+    }
+
+    function sparkline(values, w = 100, h = 34) {
+      if (values.length < 2) return "";
+      const max = Math.max(...values, 0.001);
+      const step = w / (values.length - 1);
+      const pts = values.map((v, i) => [i * step, h - (v / max) * (h - 4) - 2]);
+      const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
+      const area = `${line}L${w},${h}L0,${h}Z`;
+      return `<path d="${area}" fill="var(--accent)" opacity=".16"/>` +
+             `<path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.5" ` +
+             `vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+    }
+
+    // --------------------------------------------------------------- render
+    const STATUS_KIND = { active: "ok", unreachable: "warn", down: "err", left: "err" };
+    const badge = (status) => {
+      const kind = STATUS_KIND[String(status || "").toLowerCase()] || "neutral";
+      return `<span class="badge ${kind}">${esc(status || "unknown")}</span>`;
+    };
+
+    function renderLive() {
+      const dot = $("live-dot"), text = $("live-text");
+      if (state.loading) { dot.className = "pulse"; text.textContent = "refreshing…"; return; }
+      if (state.lastErr) { dot.className = "pulse err"; text.textContent = "disconnected"; return; }
+      if (!state.lastOk) { dot.className = "pulse idle"; text.textContent = "connecting…"; return; }
+      dot.className = "pulse";
+      text.textContent = "updated " + ago(state.lastOk);
+    }
+
+    function renderAlerts() {
+      const out = [];
+      if (state.lastErr) {
+        out.push(`<div class="banner err">
+          <b>Can't reach this node.</b><span>${esc(state.lastErr)}</span>
+          <div class="spacer"></div>
+          <button class="btn tiny" data-act="retry">Retry</button></div>`);
+      }
+      const stale = state.nodes.filter((n) => STATUS_KIND[String(n.status).toLowerCase()] !== "ok");
+      if (stale.length) {
+        out.push(`<div class="banner warn">
+          <b>${stale.length} node${stale.length > 1 ? "s" : ""} not active.</b>
+          <span>${stale.map((n) => esc(n.id) + " (" + esc(n.status) + ")").join(", ")} —
+          nodes that restarted without leaving cleanly stay here until gossip reaps them.</span></div>`);
+      }
+      $("alerts").innerHTML = out.join("");
+    }
+
+    function renderOverview() {
+      const upstreams = state.endpoints.reduce((a, e) => a + e.upstreams, 0);
+      const active = state.nodes.filter((n) => String(n.status).toLowerCase() === "active").length;
+
+      $("t-endpoints").textContent = num(state.endpoints.length);
+      $("t-endpoints-note").textContent = state.nodes.length ? "across the cluster" : "on this node";
+      $("t-upstreams").textContent = num(upstreams);
+      $("t-upstreams-note").textContent = upstreams ? "connected listeners" : "no agent connected";
+      $("t-nodes").innerHTML = state.nodes.length
+        ? `${active}<small>/ ${state.nodes.length}</small>` : "1";
+      $("t-nodes-note").textContent = state.nodes.length ? "active / known" : "standalone";
+
+      const rate = requestRate();
+      const served = state.history[state.history.length - 1]?.requests;
+      if (rate === null) {
+        $("t-rps").textContent = served === undefined ? "–" : num(served);
+        $("t-rps-note").textContent = served === undefined ? "no metrics" : "requests since start";
+      } else {
+        $("t-rps").textContent = rate < 10 ? rate.toFixed(1) : Math.round(rate);
+        $("t-rps-note").textContent = "requests / second";
+      }
+      $("t-rps-spark").innerHTML = sparkline(rateSeries());
+
+      $("ov-endpoints").innerHTML = state.endpoints.length
+        ? state.endpoints.slice(0, 6).map((e) => `
+            <tr class="clickable" data-endpoint="${esc(e.id)}">
+              <td class="mono">${esc(e.id)}</td>
+              <td class="num">${num(e.upstreams)}</td>
+              <td class="num">${e.nodes.length || "–"}</td>
+            </tr>`).join("")
+        : `<tr><td colspan="3" class="empty">
+             <div class="big">No endpoints registered</div>
+             An endpoint appears here as soon as an agent connects to the upstream port.
+             <code>piko agent http &lt;endpoint&gt; &lt;port&gt; --connect.url …</code>
+           </td></tr>`;
+
+      $("ov-nodes").innerHTML = state.nodes.length
+        ? state.nodes.map((n) => `
+            <tr class="clickable" data-node="${esc(n.id)}">
+              <td class="mono">${esc(n.id)}${n.id === state.local?.id ? ' <span class="badge neutral flat">local</span>' : ""}</td>
+              <td>${badge(n.status)}</td>
+              <td class="num">${num(n.endpoints)}</td>
+              <td class="num">${num(n.upstreams)}</td>
+            </tr>`).join("")
+        : `<tr><td colspan="4" class="empty">Running as a single node</td></tr>`;
+
+      const last = state.history[state.history.length - 1];
+      const by = last?.byStatus || {};
+      const total = Object.values(by).reduce((a, b) => a + b, 0);
+      const COLORS = { "2xx": "var(--ok)", "3xx": "var(--accent)", "4xx": "var(--warn)", "5xx": "var(--err)" };
+      $("ov-requests").innerHTML = total
+        ? `<div class="bar">${["2xx", "3xx", "4xx", "5xx"].filter((k) => by[k])
+              .map((k) => `<span style="width:${(by[k] / total * 100).toFixed(2)}%;background:${COLORS[k]}"></span>`).join("")}</div>
+           <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px">
+             ${["2xx", "3xx", "4xx", "5xx"].map((k) => `
+               <div><div style="color:var(--muted);font-size:12px">
+                 <span class="badge flat" style="background:${COLORS[k]};color:${COLORS[k]};width:8px;height:8px;padding:0;border-radius:50%;display:inline-block;margin-right:6px"></span>${k}</div>
+                 <div style="font-size:18px;font-weight:600;font-variant-numeric:tabular-nums">${num(by[k] || 0)}</div>
+               </div>`).join("")}
+           </div>`
+        : `<div class="empty">No proxy requests yet</div>`;
+    }
+
+    function renderEndpoints() {
+      const q = state.filters.endpoint.toLowerCase();
+      const rows = state.endpoints.filter((e) => e.id.toLowerCase().includes(q));
+      $("tab-endpoints").textContent = state.endpoints.length;
+      $("endpoint-hint").textContent = state.endpoints.length
+        ? `${rows.length} of ${state.endpoints.length} shown` : "";
+      $("endpoints-body").innerHTML = rows.length
+        ? rows.map((e) => `
+            <tr class="clickable" data-endpoint="${esc(e.id)}">
+              <td class="mono">${esc(e.id)}</td>
+              <td class="num">${num(e.upstreams)}</td>
+              <td>${e.nodes.length
+                    ? e.nodes.map((n) => `<span class="chip">${esc(n.id)} · ${n.listeners}</span>`).join("")
+                    : '<span style="color:var(--faint)">this node</span>'}</td>
+              <td class="num"><button class="btn tiny" data-endpoint="${esc(e.id)}">How to reach</button></td>
+            </tr>`).join("")
+        : `<tr><td colspan="4" class="empty">
+             ${state.endpoints.length
+               ? "No endpoint matches that filter"
+               : `<div class="big">No endpoints registered</div>
+                  Endpoints are created by agents connecting to the upstream port —
+                  they are not configured on the server.`}
+           </td></tr>`;
+    }
+
+    function renderNodes() {
+      const q = state.filters.node.toLowerCase();
+      const rows = state.nodes.filter((n) =>
+        n.id.toLowerCase().includes(q) || String(n.proxy_addr || "").includes(q));
+      $("tab-nodes").textContent = state.nodes.length;
+      $("nodes-body").innerHTML = rows.length
+        ? rows.map((n) => `
+            <tr class="clickable" data-node="${esc(n.id)}">
+              <td class="mono">${esc(n.id)}${n.id === state.local?.id ? ' <span class="badge neutral flat">local</span>' : ""}</td>
+              <td>${badge(n.status)}</td>
+              <td class="mono" style="color:var(--muted)">${esc(n.proxy_addr || "–")}</td>
+              <td class="num">${num(n.endpoints)}</td>
+              <td class="num">${num(n.upstreams)}</td>
+            </tr>`).join("")
+        : `<tr><td colspan="5" class="empty">${state.nodes.length ? "No node matches that filter" : "Cluster status unavailable on this node"}</td></tr>`;
+    }
+
+    function quantile(q) {
+      const m = state.metrics;
+      if (!m) return null;
+      const buckets = new Map();
+      for (const s of m.all("piko_proxy_request_latency_seconds_bucket")) {
+        const le = s.labels.le;
+        buckets.set(le, (buckets.get(le) || 0) + s.value);
+      }
+      if (!buckets.size) return null;
+      const sorted = [...buckets.entries()]
+        .map(([le, v]) => [le === "+Inf" ? Infinity : parseFloat(le), v])
+        .sort((a, b) => a[0] - b[0]);
+      const total = sorted[sorted.length - 1][1];
+      if (!total) return null;
+      const target = q * total;
+      let prevLe = 0, prevCount = 0;
+      for (const [le, count] of sorted) {
+        if (count >= target) {
+          if (!Number.isFinite(le)) return prevLe;
+          const span = count - prevCount;
+          const frac = span > 0 ? (target - prevCount) / span : 0;
+          return prevLe + (le - prevLe) * frac;
+        }
+        prevLe = Number.isFinite(le) ? le : prevLe;
+        prevCount = count;
+      }
+      return null;
+    }
+
+    function renderMetrics() {
+      const m = state.metrics;
+      if (!m) {
+        $("metric-tiles").innerHTML = `<div class="card tile"><div class="note">Metrics unavailable</div></div>`;
+        return;
+      }
+      const tiles = [
+        ["Connected upstreams", num(m.one("piko_upstreams_connected_upstreams") ?? 0), "on this node"],
+        ["Registered endpoints", num(m.one("piko_upstreams_registered_endpoints") ?? 0), "on this node"],
+        ["Requests in flight", num(m.one("piko_proxy_requests_in_flight") ?? 0), "proxy"],
+        ["Goroutines", num(m.one("go_goroutines") ?? 0), "runtime"],
+      ];
+      $("metric-tiles").innerHTML = tiles.map(([label, value, note]) => `
+        <div class="card tile"><div class="label">${label}</div>
+          <div class="value">${value}</div><div class="note">${note}</div></div>`).join("");
+
+      const ms = (v) => v === null || v === undefined ? "–" : (v * 1000 < 1 ? "<1 ms" : Math.round(v * 1000) + " ms");
+      const count = m.sum("piko_proxy_request_latency_seconds_count");
+      $("latency-body").innerHTML = count
+        ? `<div class="kv">
+             <dt>p50</dt><dd>${ms(quantile(0.5))}</dd>
+             <dt>p90</dt><dd>${ms(quantile(0.9))}</dd>
+             <dt>p99</dt><dd>${ms(quantile(0.99))}</dd>
+             <dt>Requests</dt><dd>${num(count)}</dd>
+             <dt>Mean</dt><dd>${ms(m.sum("piko_proxy_request_latency_seconds_sum") / count)}</dd>
+           </div>`
+        : `<div class="empty">No proxied requests yet</div>`;
+
+      const heap = m.one("go_memstats_heap_alloc_bytes");
+      const sys = m.one("go_memstats_sys_bytes");
+      const gc = m.all("go_gc_duration_seconds_count")[0]?.value;
+      const goVersion = m.all("go_info")[0]?.labels?.version;
+      $("runtime-body").innerHTML = `<div class="kv">
+        <dt>Heap in use</dt><dd>${bytes(heap)}</dd>
+        <dt>Memory from OS</dt><dd>${bytes(sys)}</dd>
+        <dt>GC cycles</dt><dd>${gc === undefined ? "–" : num(gc)}</dd>
+        <dt>Go</dt><dd>${esc(goVersion || "–")}</dd>
+        <dt>Cluster nodes</dt><dd>${num(m.sum("piko_cluster_nodes"))}</dd>
+      </div>`;
+
+      const q = state.filters.metric.toLowerCase();
+      const lines = m.series
+        .filter((s) => !q || s.name.toLowerCase().includes(q))
+        .map((s) => {
+          const labels = Object.entries(s.labels).map(([k, v]) => `${k}="${v}"`).join(",");
+          return `${s.name}${labels ? "{" + labels + "}" : ""} ${s.value}`;
+        });
+      $("metrics-raw").textContent = lines.length ? lines.join("\n") : "No series match that filter";
+    }
+
+    function render() {
+      renderLive();
+      renderAlerts();
+      renderOverview();
+      renderEndpoints();
+      renderNodes();
+      renderMetrics();
+      $("brand-node").textContent = state.local?.id || "";
+    }
+
+    // --------------------------------------------------------------- drawer
+    function openDrawer(title, html) {
+      closeDrawer();
+      const root = $("drawer-root");
+      root.innerHTML = `
+        <div class="scrim" data-close></div>
+        <aside class="drawer" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+          <header><h3>${esc(title)}</h3><div class="spacer"></div>
+            <button class="btn tiny ghost" data-close>Close</button></header>
+          <div class="body">${html}</div>
+        </aside>`;
+      root.querySelector(".drawer .btn")?.focus();
+    }
+    const closeDrawer = () => { $("drawer-root").innerHTML = ""; };
+
+    function proxyBase() {
+      return store.get("piko.proxy") || `${location.protocol}//${location.hostname}`;
+    }
+
+    function endpointDrawer(id) {
+      const e = state.endpoints.find((x) => x.id === id);
+      if (!e) return;
+      const base = proxyBase();
+      const host = location.hostname.split(".").slice(1).join(".") || "example.com";
+      const snippets = [
+        ["Any hostname, endpoint in a header",
+         `curl -H "x-piko-endpoint: ${id}" ${base}/`],
+        ["Wildcard domain — the first label is the endpoint",
+         `https://${id}.${host}/`],
+        ["TCP over the proxy port",
+         `piko forward tcp 3000 ${id} --connect.url ${base}`],
+      ];
+      openDrawer("Endpoint · " + id, `
+        <dl class="kv">
+          <dt>Endpoint ID</dt><dd>${esc(id)}</dd>
+          <dt>Upstream listeners</dt><dd>${num(e.upstreams)}</dd>
+          <dt>Served by</dt><dd>${e.nodes.length ? e.nodes.map((n) => esc(n.id)).join("<br>") : "this node"}</dd>
+        </dl>
+        <h4>How to reach it</h4>
+        <div class="field">
+          <label for="proxy-base">Proxy base URL</label>
+          <input class="input mono" id="proxy-base" value="${esc(base)}" spellcheck="false" />
+          <div class="help">Used only to build the snippets below. Stored in this browser.</div>
+        </div>
+        ${snippets.map(([label, cmd]) => `
+          <div style="margin-top:12px">
+            <div style="font-size:12px;color:var(--muted)">${label}</div>
+            <div class="copy"><code>${esc(cmd)}</code>
+              <button class="btn tiny" data-copy="${esc(cmd)}">Copy</button></div>
+          </div>`).join("")}
+        <h4>Upstreams per node</h4>
+        ${e.nodes.length
+          ? `<dl class="kv">${e.nodes.map((n) =>
+              `<dt>${esc(n.id)}</dt><dd>${n.listeners} listener${n.listeners > 1 ? "s" : ""}</dd>`).join("")}</dl>`
+          : `<p style="color:var(--muted)">Registered on this node.</p>`}
+      `);
+    }
+
+    function nodeDrawer(id) {
+      const meta = state.nodes.find((n) => n.id === id) || {};
+      const detail = state.details[id];
+      const endpoints = Object.entries(detail?.endpoints || {});
+      openDrawer("Node · " + id, `
+        <dl class="kv">
+          <dt>Node ID</dt><dd>${esc(id)}</dd>
+          <dt>Status</dt><dd>${badge(meta.status || detail?.status)}</dd>
+          <dt>Proxy address</dt><dd>${esc(meta.proxy_addr || detail?.proxy_addr || "–")}</dd>
+          <dt>Admin address</dt><dd>${esc(meta.admin_addr || detail?.admin_addr || "–")}</dd>
+          <dt>Endpoints</dt><dd>${num(endpoints.length)}</dd>
+          <dt>Upstreams</dt><dd>${num(endpoints.reduce((a, [, v]) => a + v, 0))}</dd>
+        </dl>
+        <h4>Endpoints on this node</h4>
+        ${endpoints.length
+          ? `<dl class="kv">${endpoints.sort().map(([k, v]) =>
+              `<dt class="mono">${esc(k)}</dt><dd>${v} listener${v > 1 ? "s" : ""}</dd>`).join("")}</dl>`
+          : `<p style="color:var(--muted)">None — this node is proxy-only right now.</p>`}
+        <h4>Raw</h4>
+        <pre class="raw">${esc(JSON.stringify(detail || meta, null, 2))}</pre>
+      `);
+    }
+
+    // ----------------------------------------------------------------- gate
+    function showGate(message) {
+      $("app").hidden = true;
+      $("gate").hidden = false;
+      $("gate-origin").textContent = location.origin + BASE;
+      const err = $("gate-error");
+      err.hidden = !message;
+      err.textContent = message || "";
+      (state.secret ? $("gate-secret") : $("gate-token")).focus();
+    }
+
+    function showApp() {
+      $("gate").hidden = true;
+      $("app").hidden = false;
+      $("signout").hidden = !(state.token || state.secret);
+    }
+
+    function gateMode(mode) {
+      $("mode-token").setAttribute("aria-pressed", String(mode === "token"));
+      $("mode-secret").setAttribute("aria-pressed", String(mode === "secret"));
+      $("field-token").hidden = mode !== "token";
+      $("field-secret").hidden = mode !== "secret";
+      (mode === "token" ? $("gate-token") : $("gate-secret")).focus();
+    }
+
+    // --------------------------------------------------------------- events
+    function setView(view) {
+      state.view = view;
+      for (const tab of document.querySelectorAll(".tab")) {
+        tab.setAttribute("aria-selected", String(tab.dataset.view === view));
+      }
+      for (const name of ["overview", "endpoints", "nodes", "metrics"]) {
+        $("view-" + name).hidden = name !== view;
+      }
+      if (location.hash !== "#" + view) history.replaceState(null, "", "#" + view);
+    }
+
+    let timer = null;
+    function schedule() {
+      clearInterval(timer);
+      const ms = parseInt($("interval").value, 10);
+      if (ms > 0) timer = setInterval(() => { if (!document.hidden) refresh(); }, ms);
+    }
+
+    function applyTheme(theme) {
+      if (theme) document.documentElement.setAttribute("data-theme", theme);
+      else document.documentElement.removeAttribute("data-theme");
+    }
+
+    document.addEventListener("click", (ev) => {
+      const el = ev.target.closest("[data-copy],[data-endpoint],[data-node],[data-goto],[data-close],[data-act]");
+      if (!el) return;
+      if (el.dataset.copy !== undefined) return void copy(el.dataset.copy);
+      if (el.dataset.close !== undefined) return closeDrawer();
+      if (el.dataset.act === "retry") return void refresh();
+      if (el.dataset.goto) return setView(el.dataset.goto);
+      if (el.dataset.endpoint) return endpointDrawer(el.dataset.endpoint);
+      if (el.dataset.node) return nodeDrawer(el.dataset.node);
+    });
+
+    document.addEventListener("input", (ev) => {
+      const t = ev.target;
+      if (t.id === "endpoint-search") { state.filters.endpoint = t.value; renderEndpoints(); }
+      if (t.id === "node-search") { state.filters.node = t.value; renderNodes(); }
+      if (t.id === "metric-search") { state.filters.metric = t.value; renderMetrics(); }
+      if (t.id === "proxy-base") store.set("piko.proxy", t.value.replace(/\/+$/, ""), true);
+    });
+
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") {
+        closeDrawer();
+        $("shortcuts").hidden = true;
+        return;
+      }
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName);
+      if (typing || ev.metaKey || ev.ctrlKey || ev.altKey || $("app").hidden) return;
+      const views = ["overview", "endpoints", "nodes", "metrics"];
+      if (ev.key === "r") { ev.preventDefault(); refresh(); }
+      else if (ev.key === "t") { const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark"; applyTheme(next); store.set("piko.theme", next, true); }
+      else if (ev.key === "?") $("shortcuts").hidden = false;
+      else if (views[parseInt(ev.key, 10) - 1]) setView(views[parseInt(ev.key, 10) - 1]);
+      else if (ev.key === "/") {
+        const box = state.view === "nodes" ? $("node-search")
+          : state.view === "metrics" ? $("metric-search") : $("endpoint-search");
+        if (state.view === "overview") setView("endpoints");
+        ev.preventDefault();
+        box.focus();
+        box.select();
+      }
+    });
+
+    for (const tab of document.querySelectorAll(".tab")) {
+      tab.addEventListener("click", () => setView(tab.dataset.view));
+    }
+    $("refresh").addEventListener("click", refresh);
+    $("interval").addEventListener("change", () => {
+      store.set("piko.interval", $("interval").value, true);
+      schedule();
+    });
+    $("theme").addEventListener("click", () => {
+      const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+      applyTheme(next);
+      store.set("piko.theme", next, true);
+    });
+    $("signout").addEventListener("click", () => {
+      store.del("piko.token"); store.del("piko.secret");
+      state.token = state.secret = ""; state.minted = { jwt: "", exp: 0 };
+      showGate("");
+    });
+    $("shortcuts-close").addEventListener("click", () => { $("shortcuts").hidden = true; });
+    $("mode-token").addEventListener("click", () => gateMode("token"));
+    $("mode-secret").addEventListener("click", () => gateMode("secret"));
+
+    $("gate-form").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const persist = $("gate-remember").checked;
+      const useSecret = $("mode-secret").getAttribute("aria-pressed") === "true";
+      const value = (useSecret ? $("gate-secret").value : $("gate-token").value).trim();
+      if (!value) return;
+
+      state.token = useSecret ? "" : value;
+      state.secret = useSecret ? value : "";
+      state.minted = { jwt: "", exp: 0 };
+      try {
+        await bearer();
+      } catch (err) {
+        $("gate-error").hidden = false;
+        $("gate-error").textContent = err.message;
+        return;
+      }
+      await refresh();
+      if (state.authed) {
+        store.set(useSecret ? "piko.secret" : "piko.token", value, persist);
+        $("gate-token").value = $("gate-secret").value = "";
+      }
+    });
+
+    // ----------------------------------------------------------------- init
+    applyTheme(store.get("piko.theme"));
+    const savedInterval = store.get("piko.interval");
+    if (savedInterval !== null) $("interval").value = savedInterval;
+    setView(location.hash.replace("#", "") || "overview");
+    window.addEventListener("hashchange", () => setView(location.hash.replace("#", "") || "overview"));
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
+
+    showApp();
+    schedule();
     refresh();
-    setInterval(refresh, 5000);
+    setInterval(renderLive, 1000);
+  })();
   </script>
 </body>
 </html>
