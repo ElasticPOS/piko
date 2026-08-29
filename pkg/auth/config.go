@@ -41,8 +41,8 @@ type Config struct {
 	DisableDisconnectOnExpiry bool `json:"disable_disconnect_on_expiry" yaml:"disable_disconnect_on_expiry"`
 
 	// EndpointsClaim lists the claim paths that hold the endpoints the token
-	// is permitted to access. The first claim that yields endpoints wins, so
-	// listing several acts as a fallback chain.
+	// is permitted to access. The endpoints found at each are combined, so a
+	// token may be scoped by more than one claim.
 	//
 	// Each entry is a claim name, optionally dot-notated to reach a nested
 	// claim, such as 'endpoint_id' or 'piko.endpoint_id'. The value found may
@@ -192,8 +192,8 @@ Piko still verifies the token expiry when the client first connects.`,
 		c.EndpointsClaim,
 		`
 Comma separated list of JWT claims holding the permitted endpoints. The
-first claim that yields endpoints wins, so listing several acts as a
-fallback chain.
+endpoints found at each claim are combined, so a token may be scoped by
+more than one claim.
 
 Each entry is a claim name, optionally dot-notated to reach a nested claim,
 such as 'endpoint_id' or 'piko.endpoint_id'. The value found may be an array

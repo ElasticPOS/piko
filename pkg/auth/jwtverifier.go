@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -38,7 +39,8 @@ type JWTVerifier struct {
 	requireEndpoints          bool
 
 	// endpointsClaim are the claims holding the permitted endpoints, each
-	// optionally dot-notated (e.g. ["endpoint_id", "piko.endpoints"]).
+	// optionally dot-notated (e.g. ["endpoint_id", "piko.endpoints"]). The
+	// endpoints found at each are combined.
 	endpointsClaim []string
 
 	// methods contains the valid JWT methods, which depends on the
@@ -135,12 +137,15 @@ func (v *JWTVerifier) Verify(tokenString string) (*Token, error) {
 		return nil, ErrInvalidToken
 	}
 
-	// The first claim that yields endpoints wins, so listing several claims
-	// acts as a fallback chain rather than widening the token's access.
+	// Endpoints from every configured claim are combined, so a token may be
+	// scoped by more than one claim (such as while migrating from one claim
+	// to another).
 	var endpoints []string
 	for _, path := range v.endpointsClaim {
-		if endpoints = extractEndpoints(claims, path); len(endpoints) > 0 {
-			break
+		for _, endpoint := range extractEndpoints(claims, path) {
+			if !slices.Contains(endpoints, endpoint) {
+				endpoints = append(endpoints, endpoint)
+			}
 		}
 	}
 

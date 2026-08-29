@@ -486,7 +486,7 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 		assert.Equal(t, []string{"store-42"}, parsedToken.Endpoints)
 	})
 
-	t.Run("first matching claim wins", func(t *testing.T) {
+	t.Run("combines endpoints from every claim", func(t *testing.T) {
 		tokenString := signRaw(t, jwt.MapClaims{
 			"endpoint_id": "a",
 			"piko":        map[string]any{"endpoints": []string{"b", "c"}},
@@ -498,10 +498,25 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 		})
 		parsedToken, err := verifier.Verify(tokenString)
 		assert.NoError(t, err)
-		assert.Equal(t, []string{"a"}, parsedToken.Endpoints)
+		assert.Equal(t, []string{"a", "b", "c"}, parsedToken.Endpoints)
 	})
 
-	t.Run("falls back to the claim that is present", func(t *testing.T) {
+	t.Run("deduplicates endpoints across claims", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"endpoint_id": "a",
+			"licensee":    []string{"a", "b"},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: []string{"endpoint_id", "licensee"},
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, parsedToken.Endpoints)
+	})
+
+	t.Run("uses the only claim that is present", func(t *testing.T) {
 		tokenString := signRaw(t, jwt.MapClaims{
 			"piko": map[string]any{"endpoint_id": "a"},
 		})

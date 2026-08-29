@@ -156,10 +156,11 @@ Or as a flag, taking the claims comma separated:
 piko server --upstream.auth.endpoints-claim endpoint_id,piko.endpoint_id
 ```
 
-The value found may be an array of strings or a single string. The first
-claim that yields endpoints wins, so listing several acts as a fallback chain
-for issuers that use different claims — a token is never granted the union of
-them. Defaults to `piko.endpoints`.
+The value found may be an array of strings or a single string. The endpoints
+found at each claim are combined, so a token carrying more than one of them is
+permitted on all the endpoints they name. This is intended for migrating
+between claims, where older tokens carry one and newer tokens the other, and
+both must keep working. Defaults to `piko.endpoints`.
 
 ### Requiring endpoints
 
@@ -182,8 +183,8 @@ Or as a flag:
 piko server --upstream.auth.require-endpoints
 ```
 
-The token is rejected when none of the claims listed in `endpoints_claim`
-yield endpoints, even if it is otherwise perfectly valid. Piko responds
+The token is rejected when no claim listed in `endpoints_claim` yields any
+endpoints, even if it is otherwise perfectly valid. Piko responds
 `401 Unauthorized` with `{"error": "token missing endpoints"}`, distinct from
 the `invalid token` returned for a bad signature or a failed `aud`/`iss`
 check, and logs which claims it looked in.
