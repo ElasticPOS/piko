@@ -412,7 +412,7 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 
 		verifier := NewJWTVerifier(&LoadedConfig{
 			HMACSecretKey:  secretKey,
-			EndpointsClaim: "endpoint_id",
+			EndpointsClaim: []string{"endpoint_id"},
 		})
 		parsedToken, err := verifier.Verify(tokenString)
 		assert.NoError(t, err)
@@ -426,7 +426,7 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 
 		verifier := NewJWTVerifier(&LoadedConfig{
 			HMACSecretKey:  secretKey,
-			EndpointsClaim: "endpoint_id",
+			EndpointsClaim: []string{"endpoint_id"},
 		})
 		parsedToken, err := verifier.Verify(tokenString)
 		assert.NoError(t, err)
@@ -440,7 +440,7 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 
 		verifier := NewJWTVerifier(&LoadedConfig{
 			HMACSecretKey:  secretKey,
-			EndpointsClaim: "license.endpoints",
+			EndpointsClaim: []string{"license.endpoints"},
 		})
 		parsedToken, err := verifier.Verify(tokenString)
 		assert.NoError(t, err)
@@ -465,11 +465,54 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 
 		verifier := NewJWTVerifier(&LoadedConfig{
 			HMACSecretKey:  secretKey,
-			EndpointsClaim: "endpoint_id",
+			EndpointsClaim: []string{"endpoint_id"},
 		})
 		parsedToken, err := verifier.Verify(tokenString)
 		assert.NoError(t, err)
 		assert.Empty(t, parsedToken.Endpoints)
+	})
+
+	t.Run("nested path under piko", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"piko": map[string]any{"endpoint_id": "store-42"},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: []string{"piko.endpoint_id"},
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"store-42"}, parsedToken.Endpoints)
+	})
+
+	t.Run("first matching claim wins", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"endpoint_id": "a",
+			"piko":        map[string]any{"endpoints": []string{"b", "c"}},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: []string{"endpoint_id", "piko.endpoints"},
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"a"}, parsedToken.Endpoints)
+	})
+
+	t.Run("falls back to the claim that is present", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"piko": map[string]any{"endpoint_id": "a"},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: []string{"piko.endpoints", "piko.endpoint_id"},
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"a"}, parsedToken.Endpoints)
 	})
 
 	t.Run("require-endpoints rejects missing custom claim", func(t *testing.T) {
@@ -477,7 +520,7 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 
 		verifier := NewJWTVerifier(&LoadedConfig{
 			HMACSecretKey:    secretKey,
-			EndpointsClaim:   "endpoint_id",
+			EndpointsClaim:   []string{"endpoint_id"},
 			RequireEndpoints: true,
 		})
 		_, err := verifier.Verify(tokenString)

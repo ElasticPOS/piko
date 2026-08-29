@@ -40,13 +40,17 @@ type Config struct {
 	// Piko still verifies the token expiry when the client first connects.
 	DisableDisconnectOnExpiry bool `json:"disable_disconnect_on_expiry" yaml:"disable_disconnect_on_expiry"`
 
-	// EndpointsClaim is the dot-notation path into the JWT claims that holds
-	// the endpoints the token is permitted to access.
+	// EndpointsClaim lists the claim paths that hold the endpoints the token
+	// is permitted to access. The first claim that yields endpoints wins, so
+	// listing several acts as a fallback chain.
 	//
-	// Defaults to 'piko.endpoints' when empty. Set it to match where your
-	// token issuer puts the endpoints, e.g. 'endpoint_id' for a root-level
-	// claim. The value may be an array of strings or a single string.
-	EndpointsClaim string `json:"endpoints_claim" yaml:"endpoints_claim"`
+	// Each entry is a claim name, optionally dot-notated to reach a nested
+	// claim, such as 'endpoint_id' or 'piko.endpoint_id'. The value found may
+	// be an array of strings or a single string.
+	//
+	// Defaults to ['piko.endpoints'] when empty. Set it to match where your
+	// token issuer puts the endpoints.
+	EndpointsClaim []string `json:"endpoints_claim" yaml:"endpoints_claim"`
 
 	// RequireEndpoints rejects tokens that don't include a non-empty
 	// endpoints claim (see EndpointsClaim).
@@ -70,7 +74,7 @@ type LoadedConfig struct {
 	Audience                  string
 	Issuer                    string
 	DisableDisconnectOnExpiry bool
-	EndpointsClaim            string
+	EndpointsClaim            []string
 	RequireEndpoints          bool
 	JWKS                      *LoadedJWKS
 }
@@ -182,16 +186,20 @@ Disables disconnecting the client when their token expires.
 
 Piko still verifies the token expiry when the client first connects.`,
 	)
-	fs.StringVar(
+	fs.StringSliceVar(
 		&c.EndpointsClaim,
 		prefix+"endpoints-claim",
 		c.EndpointsClaim,
 		`
-Dot-notation path into the JWT claims holding the permitted endpoints.
+Comma separated list of JWT claims holding the permitted endpoints. The
+first claim that yields endpoints wins, so listing several acts as a
+fallback chain.
 
-Defaults to 'piko.endpoints'. Set it to match where your token issuer puts
-the endpoints, such as 'endpoint_id' for a root-level claim. The value may be
-an array of strings or a single string.`,
+Each entry is a claim name, optionally dot-notated to reach a nested claim,
+such as 'endpoint_id' or 'piko.endpoint_id'. The value found may be an array
+of strings or a single string.
+
+Defaults to 'piko.endpoints'.`,
 	)
 	fs.BoolVar(
 		&c.RequireEndpoints,

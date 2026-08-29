@@ -11,9 +11,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// DefaultEndpointsClaim is the JWT claim path the verifier reads the permitted
+// DefaultEndpointsClaim is the JWT claim the verifier reads the permitted
 // endpoints from when none is configured.
-const DefaultEndpointsClaim = "piko.endpoints"
+var DefaultEndpointsClaim = []string{"piko.endpoints"}
 
 type PikoClaims struct {
 	Endpoints []string `json:"endpoints"`
@@ -37,8 +37,8 @@ type JWTVerifier struct {
 	disableDisconnectOnExpiry bool
 	requireEndpoints          bool
 
-	// endpointsClaim is the dot-notation path into the JWT claims that holds
-	// the permitted endpoints (e.g. "piko.endpoints" or "endpoint_id").
+	// endpointsClaim are the claims holding the permitted endpoints, each
+	// optionally dot-notated (e.g. ["endpoint_id", "piko.endpoints"]).
 	endpointsClaim []string
 
 	// methods contains the valid JWT methods, which depends on the
@@ -48,7 +48,7 @@ type JWTVerifier struct {
 
 func NewJWTVerifier(conf *LoadedConfig) *JWTVerifier {
 	endpointsClaim := conf.EndpointsClaim
-	if endpointsClaim == "" {
+	if len(endpointsClaim) == 0 {
 		endpointsClaim = DefaultEndpointsClaim
 	}
 
@@ -57,7 +57,7 @@ func NewJWTVerifier(conf *LoadedConfig) *JWTVerifier {
 		issuer:                    conf.Issuer,
 		disableDisconnectOnExpiry: conf.DisableDisconnectOnExpiry,
 		requireEndpoints:          conf.RequireEndpoints,
-		endpointsClaim:            strings.Split(endpointsClaim, "."),
+		endpointsClaim:            endpointsClaim,
 	}
 
 	if len(conf.HMACSecretKey) > 0 {
@@ -135,14 +135,22 @@ func (v *JWTVerifier) Verify(tokenString string) (*Token, error) {
 		return nil, ErrInvalidToken
 	}
 
-	endpoints := extractEndpoints(claims, v.endpointsClaim)
+	// The first claim that yields endpoints wins, so listing several claims
+	// acts as a fallback chain rather than widening the token's access.
+	var endpoints []string
+	for _, path := range v.endpointsClaim {
+		if endpoints = extractEndpoints(claims, path); len(endpoints) > 0 {
+			break
+		}
+	}
 
 	// When required, reject tokens that don't scope themselves to specific
 	// endpoints. Otherwise an unscoped token would be permitted on every
 	// endpoint (see Token.EndpointPermitted).
 	if v.requireEndpoints && len(endpoints) == 0 {
 		return nil, fmt.Errorf(
-			"%w: %s", ErrMissingEndpoints, strings.Join(v.endpointsClaim, "."),
+			"%w: %s", ErrMissingEndpoints,
+			strings.Join(v.endpointsClaim, ", "),
 		)
 	}
 
@@ -162,15 +170,16 @@ func (v *JWTVerifier) Verify(tokenString string) (*Token, error) {
 	}, nil
 }
 
-// extractEndpoints walks the given dot-notation claim path and coerces the
-// value found there into a list of endpoint IDs.
+// extractEndpoints walks the given claim path and coerces the value found
+// there into a list of endpoint IDs.
 //
 // The value may be a JSON array of strings (e.g. "piko.endpoints":
 // ["a", "b"]) or a single string (e.g. "endpoint_id": "a"). A missing path,
 // or any other type, yields no endpoints.
-func extractEndpoints(claims jwt.MapClaims, path []string) []string {
+func extractEndpoints(claims jwt.MapClaims, path string) []string {
 	var cur any = map[string]any(claims)
-	for _, key := range path {
+	for {
+		key, rest, nested := strings.Cut(path, ".")
 		obj, ok := cur.(map[string]any)
 		if !ok {
 			return nil
@@ -179,6 +188,10 @@ func extractEndpoints(claims jwt.MapClaims, path []string) []string {
 		if !ok {
 			return nil
 		}
+		if !nested {
+			break
+		}
+		path = rest
 	}
 
 	switch val := cur.(type) {
