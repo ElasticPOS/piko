@@ -3,7 +3,9 @@ package auth
 import (
 	"testing"
 
+	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfig_Load(t *testing.T) {
@@ -70,5 +72,45 @@ RIQzNasYSoRQHQ/6S6Ps8tpMcT+KvIIC8W/e9k0W7Cm72M1P9jU7SLf/vg==
 		assert.NoError(t, err)
 
 		assert.NotNil(t, loaded.JWKS.KeyFunc)
+	})
+}
+
+func TestConfig_EndpointsClaimFlag(t *testing.T) {
+	parse := func(t *testing.T, args ...string) Config {
+		var config Config
+		fs := pflag.NewFlagSet("piko", pflag.ContinueOnError)
+		config.RegisterFlags(fs, "upstream")
+		require.NoError(t, fs.Parse(args))
+		return config
+	}
+
+	t.Run("comma separated claims", func(t *testing.T) {
+		config := parse(
+			t, "--upstream.auth.endpoints-claim=licensee,endpoint_id",
+		)
+		assert.Equal(
+			t, []string{"licensee", "endpoint_id"}, config.EndpointsClaim,
+		)
+	})
+
+	t.Run("dots are kept within a claim", func(t *testing.T) {
+		config := parse(
+			t, "--upstream.auth.endpoints-claim=piko.endpoints,endpoint_id",
+		)
+		assert.Equal(
+			t,
+			[]string{"piko.endpoints", "endpoint_id"},
+			config.EndpointsClaim,
+		)
+	})
+
+	t.Run("single claim", func(t *testing.T) {
+		config := parse(t, "--upstream.auth.endpoints-claim=endpoint_id")
+		assert.Equal(t, []string{"endpoint_id"}, config.EndpointsClaim)
+	})
+
+	t.Run("unset", func(t *testing.T) {
+		config := parse(t)
+		assert.Empty(t, config.EndpointsClaim)
 	})
 }
