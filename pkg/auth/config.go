@@ -48,6 +48,10 @@ type Config struct {
 	// claim, such as 'endpoint_id' or 'piko.endpoint_id'. The value found may
 	// be an array of strings or a single string.
 	//
+	// A value may name an endpoint by hostname, in which case only the
+	// bottom-level domain is used, so 'my-endpoint.example.com' scopes the
+	// token to endpoint 'my-endpoint'.
+	//
 	// Defaults to ['piko.endpoints'] when empty. Set it to match where your
 	// token issuer puts the endpoints.
 	EndpointsClaim []string `json:"endpoints_claim" yaml:"endpoints_claim"`
@@ -198,6 +202,10 @@ more than one claim.
 Each entry is a claim name, optionally dot-notated to reach a nested claim,
 such as 'endpoint_id' or 'piko.endpoint_id'. The value found may be an array
 of strings or a single string.
+
+A value may name an endpoint by hostname, in which case only the bottom-level
+domain is used, so 'my-endpoint.example.com' scopes the token to endpoint
+'my-endpoint'.
 
 Defaults to 'piko.endpoints'.`,
 	)

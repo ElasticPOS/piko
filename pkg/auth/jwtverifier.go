@@ -181,6 +181,8 @@ func (v *JWTVerifier) Verify(tokenString string) (*Token, error) {
 // The value may be a JSON array of strings (e.g. "piko.endpoints":
 // ["a", "b"]) or a single string (e.g. "endpoint_id": "a"). A missing path,
 // or any other type, yields no endpoints.
+//
+// Each value is reduced to an endpoint ID by endpointIDFromClaim.
 func extractEndpoints(claims jwt.MapClaims, path string) []string {
 	var cur any = map[string]any(claims)
 	for {
@@ -199,25 +201,48 @@ func extractEndpoints(claims jwt.MapClaims, path string) []string {
 		path = rest
 	}
 
+	var values []string
 	switch val := cur.(type) {
 	case string:
-		if val == "" {
-			return nil
-		}
-		return []string{val}
+		values = []string{val}
 	case []string:
-		return val
+		values = val
 	case []any:
-		endpoints := make([]string, 0, len(val))
+		values = make([]string, 0, len(val))
 		for _, item := range val {
-			if s, ok := item.(string); ok && s != "" {
-				endpoints = append(endpoints, s)
+			if s, ok := item.(string); ok {
+				values = append(values, s)
 			}
 		}
-		return endpoints
 	default:
 		return nil
 	}
+
+	endpoints := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		endpoints = append(endpoints, endpointIDFromClaim(value))
+	}
+	return endpoints
+}
+
+// endpointIDFromClaim reduces a claim value to an endpoint ID.
+//
+// A token may name an endpoint by the hostname it is reached on, such as
+// "my-endpoint.example.com", whereas the endpoint ID is only the
+// bottom-level domain "my-endpoint". This mirrors how Piko takes the
+// endpoint ID from a request's Host header (see
+// proxy.EndpointIDFromRequest).
+//
+// A value with no domain, such as "my-endpoint", is used as-is.
+func endpointIDFromClaim(value string) string {
+	name, _, found := strings.Cut(value, ".")
+	if !found || name == "" {
+		return value
+	}
+	return name
 }
 
 var _ Verifier = &JWTVerifier{}

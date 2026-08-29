@@ -162,6 +162,12 @@ permitted on all the endpoints they name. This is intended for migrating
 between claims, where older tokens carry one and newer tokens the other, and
 both must keep working. Defaults to `piko.endpoints`.
 
+A token may name an endpoint by the hostname it is reached on, in which case
+only the bottom-level domain is used — `harmonypos.example.com` scopes the
+token to endpoint `harmonypos`. This is the same rule Piko uses to take the
+endpoint ID from a request's `Host` header, so a claim can carry whichever
+form your issuer already has. A value with no domain is used as-is.
+
 ### Requiring endpoints
 
 A token whose endpoints claim is missing or empty is unscoped, and by default

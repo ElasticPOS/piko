@@ -530,6 +530,51 @@ func TestJWTVerifier_EndpointsClaim(t *testing.T) {
 		assert.Equal(t, []string{"a"}, parsedToken.Endpoints)
 	})
 
+	t.Run("strips the domain from a hostname value", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"endpoint_id": "harmonypos.elasticpos.com",
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: []string{"endpoint_id"},
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"harmonypos"}, parsedToken.Endpoints)
+		assert.True(t, parsedToken.EndpointPermitted("harmonypos"))
+	})
+
+	t.Run("strips the domain from each array value", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"piko": map[string]any{"endpoints": []string{
+				"a.elasticpos.com", "b",
+			}},
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey: secretKey,
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, parsedToken.Endpoints)
+	})
+
+	t.Run("deduplicates once the domain is stripped", func(t *testing.T) {
+		tokenString := signRaw(t, jwt.MapClaims{
+			"endpoint_id": "harmonypos",
+			"licensee":    "harmonypos.elasticpos.com",
+		})
+
+		verifier := NewJWTVerifier(&LoadedConfig{
+			HMACSecretKey:  secretKey,
+			EndpointsClaim: []string{"endpoint_id", "licensee"},
+		})
+		parsedToken, err := verifier.Verify(tokenString)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"harmonypos"}, parsedToken.Endpoints)
+	})
+
 	t.Run("require-endpoints rejects missing custom claim", func(t *testing.T) {
 		tokenString := signRaw(t, jwt.MapClaims{"sub": "someone"})
 
