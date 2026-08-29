@@ -9,6 +9,18 @@
 app = 'piko-fragrant-voice-7319'
 primary_region = 'fra'
 
+# Piko announces its departure to the cluster (gossip '_internal:left') as the
+# LAST step of its graceful shutdown, after draining upstream and proxy
+# connections. Fly's default kill_timeout is 5s, so the process was SIGKILLed
+# long before that announcement was ever sent, leaving a "ghost" node that
+# peers can only detect as failed. Failed nodes have no tombstone, so peers
+# that still hold the dead node's state keep re-seeding it into peers that
+# already expired it -- the node flaps joined/unreachable/expired forever.
+#
+# kill_timeout must therefore exceed --grace-period (set in entrypoint.sh).
+kill_signal = 'SIGINT'
+kill_timeout = '30s'
+
 [build]
   [build.args]
     GO_VERSION = '1.25.5'

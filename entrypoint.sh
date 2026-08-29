@@ -54,6 +54,12 @@ fi
 # register. Set via: fly secrets set KEYTANA_PUBLIC_KEY="$(cat public.pem)"
 # When unset, auth stays disabled so the server still boots.
 
+# --grace-period must stay BELOW fly.toml's kill_timeout. Piko drains upstream
+# and proxy connections first and only then announces its leave to the cluster,
+# so if Fly SIGKILLs the process before the drain finishes, the leave is never
+# sent and the node lingers as a flapping ghost in every peer's gossip state.
+# Upstream tunnels are long-lived, so the drain always runs the full period.
+#
 # Build the argument list with `set --` so the multi-line PEM survives as a
 # single argument; the old unquoted "$AUTH_ARGS" word-splitting would mangle it.
 set -- server \
@@ -67,6 +73,7 @@ set -- server \
     --cluster.gossip.bind-addr ":8003" \
     --cluster.gossip.advertise-addr "${ADVERTISE_IP}:8003" \
     --cluster.abort-if-join-fails=false \
+    --grace-period "${GRACE_PERIOD:-20s}" \
     --log.level "${LOG_LEVEL:-info}"
 
 if [ -n "$CLUSTER_ARGS" ]; then
