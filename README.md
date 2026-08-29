@@ -117,6 +117,53 @@ authenticate with the server and forward connections via TLS.
 You can also use the [Go SDK](https://github.com/andydunstall/piko/wiki/Go-SDK)
 to open a `net.Conn` that's connected to the configured endpoint.
 
+## Authentication
+
+Piko can authenticate incoming connections with a JWT. Auth is configured
+separately for each listener, under `proxy.auth`, `upstream.auth` and
+`admin.auth` (plus `tenants[].auth` when using tenants), and each takes the
+same options.
+
+A token may scope itself to a set of endpoints, in which case it may only be
+used to connect to those endpoints. By default Piko reads them from the
+`piko.endpoints` claim:
+```
+{
+  "piko": {
+    "endpoints": ["my-endpoint"]
+  }
+}
+```
+
+### Endpoints claim
+
+If your token issuer puts the endpoints somewhere else, `endpoints_claim`
+lists the claims to read them from. Each entry is a claim name, optionally
+dot-notated to reach a nested claim:
+```
+upstream:
+  auth:
+    hmac_secret_key: "..."
+    endpoints_claim:
+      # {"endpoint_id": "my-endpoint"}
+      - endpoint_id
+      # {"piko": {"endpoint_id": "my-endpoint"}}
+      - piko.endpoint_id
+```
+
+Or as a flag, taking the claims comma separated:
+```
+piko server --upstream.auth.endpoints-claim endpoint_id,piko.endpoint_id
+```
+
+The value found may be an array of strings or a single string. The first
+claim that yields endpoints wins, so listing several acts as a fallback chain
+for issuers that use different claims — a token is never granted the union of
+them. Defaults to `piko.endpoints`.
+
+A token with no endpoints claim may connect to any endpoint. Set
+`require_endpoints: true` to reject such unscoped tokens instead.
+
 ## Design Goals
 
 ### Production Traffic
