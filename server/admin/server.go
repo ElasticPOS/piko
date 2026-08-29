@@ -86,12 +86,30 @@ func NewServer(
 	// Password login, for opening the panel in a browser without minting a
 	// token. The login route itself must stay unauthenticated, and logout
 	// only clears a cookie, so both are registered before the middleware.
+	//
+	// They are registered even when no password is configured, answering 404
+	// so the panel can tell "wrong password" apart from "this server doesn't
+	// do password login" and offer a token instead. Leaving them unregistered
+	// would send the request to the authenticated catch-all, which answers
+	// 401 to both.
 	var passwords *passwordAuth
 	if password != "" {
 		passwords = newPasswordAuth(password, logger)
-		router.POST("/login", passwords.loginRoute)
-		router.POST("/logout", passwords.logoutRoute)
 	}
+	router.POST("/login", func(c *gin.Context) {
+		if passwords == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "password login not enabled"})
+			return
+		}
+		passwords.loginRoute(c)
+	})
+	router.POST("/logout", func(c *gin.Context) {
+		if passwords == nil {
+			c.Status(http.StatusNoContent)
+			return
+		}
+		passwords.logoutRoute(c)
+	})
 
 	// When both are configured either credential opens the admin server: a
 	// token for scripts and monitoring, a browser session for the panel.

@@ -172,6 +172,21 @@ func TestServer_PasswordAuthentication(t *testing.T) {
 		assert.Equal(t, http.StatusOK, get(t, addr, "/health", nil).StatusCode)
 	})
 
+	// Without a password the panel must be able to tell that password login
+	// isn't available, rather than being told its password was wrong.
+	t.Run("login unavailable without a password", func(t *testing.T) {
+		verifier := auth.NewMultiTenantVerifier(&fakeVerifier{
+			handler: func(_ string) (*auth.Token, error) {
+				return nil, auth.ErrInvalidToken
+			},
+		}, nil)
+		addr := passwordServer(t, "", verifier)
+
+		resp, cookies := login(t, addr, "anything")
+		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+		assert.Empty(t, cookies)
+	})
+
 	// Scripts and monitoring keep using tokens even when a password is set.
 	t.Run("token still accepted", func(t *testing.T) {
 		verifier := auth.NewMultiTenantVerifier(&fakeVerifier{
