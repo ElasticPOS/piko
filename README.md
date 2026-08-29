@@ -161,8 +161,32 @@ claim that yields endpoints wins, so listing several acts as a fallback chain
 for issuers that use different claims — a token is never granted the union of
 them. Defaults to `piko.endpoints`.
 
-A token with no endpoints claim may connect to any endpoint. Set
-`require_endpoints: true` to reject such unscoped tokens instead.
+### Requiring endpoints
+
+A token whose endpoints claim is missing or empty is unscoped, and by default
+an unscoped token may connect to **any** endpoint. If your issuer is expected
+to always scope its tokens, a claim that silently goes missing therefore
+widens access rather than denying it.
+
+Set `require_endpoints` to reject unscoped tokens instead, so every token must
+name the endpoints it may use:
+```
+upstream:
+  auth:
+    hmac_secret_key: "..."
+    require_endpoints: true
+```
+
+Or as a flag:
+```
+piko server --upstream.auth.require-endpoints
+```
+
+The token is rejected when none of the claims listed in `endpoints_claim`
+yield endpoints, even if it is otherwise perfectly valid. Piko responds
+`401 Unauthorized` with `{"error": "token missing endpoints"}`, distinct from
+the `invalid token` returned for a bad signature or a failed `aud`/`iss`
+check, and logs which claims it looked in.
 
 ## Design Goals
 

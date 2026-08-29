@@ -205,12 +205,13 @@ Defaults to 'piko.endpoints'.`,
 		&c.RequireEndpoints,
 		prefix+"require-endpoints",
 		c.RequireEndpoints,
-		`
-Reject tokens that don't include a non-empty 'piko.endpoints' claim.
+		fmt.Sprintf(`
+Reject tokens that don't include a non-empty endpoints claim (see
+--%sendpoints-claim).
 
 By default a token with no endpoints claim may access all endpoints. When
 enabled, every token must scope itself to one or more endpoints, so an
-unscoped token can never connect.`,
+unscoped token can never connect.`, prefix),
 	)
 
 	c.JWKS.RegisterFlags(fs, prefix)
