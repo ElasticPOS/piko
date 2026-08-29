@@ -44,6 +44,7 @@ func NewServer(
 	clusterState *cluster.State,
 	registry *prometheus.Registry,
 	verifier *auth.MultiTenantVerifier,
+	password string,
 	tlsConfig *tls.Config,
 	logger log.Logger,
 ) *Server {
@@ -82,9 +83,32 @@ func NewServer(
 	// registered before the authentication middleware. See registerWeb.
 	server.registerWeb(router)
 
-	if verifier != nil {
-		authMiddleware := middleware.NewAuth(verifier, logger)
-		router.Use(authMiddleware.Verify)
+	// Password login, for opening the panel in a browser without minting a
+	// token. The login route itself must stay unauthenticated, and logout
+	// only clears a cookie, so both are registered before the middleware.
+	var passwords *passwordAuth
+	if password != "" {
+		passwords = newPasswordAuth(password, logger)
+		router.POST("/login", passwords.loginRoute)
+		router.POST("/logout", passwords.logoutRoute)
+	}
+
+	// When both are configured either credential opens the admin server: a
+	// token for scripts and monitoring, a browser session for the panel.
+	switch {
+	case verifier != nil && passwords != nil:
+		tokens := middleware.NewAuth(verifier, logger)
+		router.Use(func(c *gin.Context) {
+			if c.GetHeader("Authorization") != "" || c.GetHeader("x-piko-authorization") != "" {
+				tokens.Verify(c)
+				return
+			}
+			passwords.Verify(c)
+		})
+	case verifier != nil:
+		router.Use(middleware.NewAuth(verifier, logger).Verify)
+	case passwords != nil:
+		router.Use(passwords.Verify)
 	}
 
 	if clusterState != nil {

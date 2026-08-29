@@ -103,10 +103,13 @@ else
     echo "Upstream JWT auth: DISABLED (KEYTANA_PUBLIC_KEY not set)"
 fi
 
-# JWT auth on the admin port (8002). That port serves the web panel, /metrics,
+# Auth on the admin port (8002). That port serves the web panel, /metrics,
 # /status and /debug/pprof, and is published publicly for the panel, so without
-# this anyone can read cluster state or pull heap and goroutine dumps
+# it anyone can read cluster state or pull heap and goroutine dumps
 # (/debug/pprof/profile also pins a CPU for 30s per request).
+#
+# Two options, below: ADMIN_PASSWORD for opening the panel in a browser, and
+# ADMIN_HMAC_SECRET for token access from scripts and monitoring.
 #
 # Deliberately NOT the keytana key: signing admin access with the licence key
 # would make every customer's licence an admin credential. Use a separate
@@ -122,6 +125,21 @@ if [ -n "$ADMIN_HMAC_SECRET" ]; then
     set -- "$@" --admin.auth.hmac-secret-key="${ADMIN_HMAC_SECRET}"
 else
     echo "Admin JWT auth: DISABLED (ADMIN_HMAC_SECRET not set)"
+fi
+
+# Password login for the web panel. The panel prompts for this password and
+# exchanges it for a signed session cookie, so the panel can be opened in a
+# browser without minting a token (a browser can't send an Authorization
+# header on a navigation). Set via:
+#   fly secrets set ADMIN_PASSWORD='...'
+#
+# Independent of ADMIN_HMAC_SECRET: set either, or both, in which case tokens
+# keep working for scripts and monitoring while people use the password.
+if [ -n "$ADMIN_PASSWORD" ]; then
+    echo "Admin password login: ENABLED"
+    set -- "$@" --admin.auth.password="${ADMIN_PASSWORD}"
+else
+    echo "Admin password login: DISABLED (ADMIN_PASSWORD not set)"
 fi
 
 echo "Starting Piko server..."

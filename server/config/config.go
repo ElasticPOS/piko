@@ -395,6 +395,13 @@ type AdminConfig struct {
 
 	Auth auth.Config `json:"auth" yaml:"auth"`
 
+	// Password is a shared password for the admin server, letting the web
+	// panel be opened in a browser without minting a token.
+	//
+	// It is only for the admin server: proxy and upstream connections always
+	// authenticate with tokens.
+	Password string `json:"password" yaml:"password"`
+
 	TLS TLSConfig `json:"tls" yaml:"tls"`
 }
 
@@ -435,6 +442,22 @@ By default, if the bind address includes an IP to bind to that will be used.
 If the bind address does not include an IP (such as ':8002') the nodes
 private IP will be used, such as a bind address of ':8002' may have an
 advertise address of '10.26.104.14:8002'.`,
+	)
+
+	fs.StringVar(
+		&c.Password,
+		"admin.auth.password",
+		c.Password,
+		`
+Shared password for the admin server.
+
+When set, the admin web panel shows a password prompt and exchanges the
+password for a session cookie, so the panel can be opened in a browser
+without minting a token. Requests with an 'Authorization' header are still
+verified as tokens, so both can be enabled at once.
+
+Sessions are signed with the password, so any node in the cluster accepts a
+session issued by any other node.`,
 	)
 
 	c.Auth.RegisterFlags(fs, "admin")

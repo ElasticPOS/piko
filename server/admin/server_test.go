@@ -54,6 +54,7 @@ func TestServer_AdminRoutes(t *testing.T) {
 		nil,
 		prometheus.NewRegistry(),
 		nil,
+		"",
 		nil,
 		log.NewNopLogger(),
 	)
@@ -122,6 +123,7 @@ func TestServer_StatusRoutes(t *testing.T) {
 		nil,
 		prometheus.NewRegistry(),
 		nil,
+		"",
 		nil,
 		log.NewNopLogger(),
 	)
@@ -171,6 +173,7 @@ func TestServer_Forward(t *testing.T) {
 		state1,
 		prometheus.NewRegistry(),
 		nil,
+		"",
 		nil,
 		log.NewNopLogger(),
 	)
@@ -198,6 +201,7 @@ func TestServer_Forward(t *testing.T) {
 		state2,
 		prometheus.NewRegistry(),
 		nil,
+		"",
 		nil,
 		log.NewNopLogger(),
 	)
@@ -249,6 +253,7 @@ func TestServer_Authentication(t *testing.T) {
 			nil,
 			prometheus.NewRegistry(),
 			verifier,
+			"",
 			nil,
 			log.NewNopLogger(),
 		)
@@ -284,6 +289,7 @@ func TestServer_Authentication(t *testing.T) {
 			nil,
 			prometheus.NewRegistry(),
 			verifier,
+			"",
 			nil,
 			log.NewNopLogger(),
 		)
@@ -321,6 +327,7 @@ func TestServer_Authentication(t *testing.T) {
 			nil,
 			prometheus.NewRegistry(),
 			verifier,
+			"",
 			nil,
 			log.NewNopLogger(),
 		)
@@ -358,6 +365,7 @@ func TestServer_Authentication(t *testing.T) {
 			nil,
 			prometheus.NewRegistry(),
 			verifier,
+			"",
 			nil,
 			log.NewNopLogger(),
 		)
@@ -398,6 +406,7 @@ func TestServer_Authentication(t *testing.T) {
 			nil,
 			prometheus.NewRegistry(),
 			verifier,
+			"",
 			nil,
 			log.NewNopLogger(),
 		)
@@ -439,6 +448,7 @@ func TestServer_TLS(t *testing.T) {
 		nil,
 		prometheus.NewRegistry(),
 		nil,
+		"",
 		tlsConfig,
 		log.NewNopLogger(),
 	)

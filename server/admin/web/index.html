@@ -343,35 +343,44 @@
     <div class="card">
       <div class="body">
         <h1>Piko Admin</h1>
-        <p>This node requires a token to read cluster status.</p>
-
-        <div class="seg" role="group" aria-label="Credential type">
-          <button type="button" id="mode-token" aria-pressed="true">Paste a token</button>
-          <button type="button" id="mode-secret" aria-pressed="false">Use signing secret</button>
-        </div>
+        <p id="gate-sub">Sign in to read cluster status.</p>
 
         <form id="gate-form">
-          <div class="field" id="field-token">
-            <label for="gate-token">Admin JWT</label>
-            <input class="input" id="gate-token" type="password" autocomplete="off"
-                   spellcheck="false" placeholder="eyJhbGciOiJIUzI1NiIs…" />
-            <div class="help">Any JWT the admin server accepts, sent as <code>Authorization: Bearer</code>.</div>
+          <div class="field" id="field-password">
+            <label for="gate-password">Admin password</label>
+            <input class="input" id="gate-password" type="password"
+                   autocomplete="current-password" spellcheck="false" />
+            <div class="help">Set on the server with <code>--admin.auth.password</code>.</div>
           </div>
 
-          <div class="field" id="field-secret" hidden>
-            <label for="gate-secret">HMAC signing secret</label>
-            <input class="input" id="gate-secret" type="password" autocomplete="off"
-                   spellcheck="false" placeholder="admin.auth.hmac-secret-key" />
-            <div class="help">
-              Short-lived tokens are minted in this browser (HS256, 5&nbsp;min) — the secret is
-              never sent over the network. Only works when the server verifies HMAC.
+          <div id="token-modes" hidden>
+            <div class="seg" role="group" aria-label="Credential type">
+              <button type="button" id="mode-token" aria-pressed="true">Paste a token</button>
+              <button type="button" id="mode-secret" aria-pressed="false">Signing secret</button>
             </div>
-          </div>
 
-          <label class="check">
-            <input type="checkbox" id="gate-remember" />
-            Keep me signed in on this browser
-          </label>
+            <div class="field" id="field-token">
+              <label for="gate-token">Admin JWT</label>
+              <input class="input" id="gate-token" type="password" autocomplete="off"
+                     spellcheck="false" placeholder="eyJhbGciOiJIUzI1NiIs…" />
+              <div class="help">Sent as <code>Authorization: Bearer</code>.</div>
+            </div>
+
+            <div class="field" id="field-secret" hidden>
+              <label for="gate-secret">HMAC signing secret</label>
+              <input class="input" id="gate-secret" type="password" autocomplete="off"
+                     spellcheck="false" placeholder="admin.auth.hmac-secret-key" />
+              <div class="help">
+                Short-lived tokens are minted in this browser (HS256, 5&nbsp;min) — the secret
+                is never sent over the network.
+              </div>
+            </div>
+
+            <label class="check">
+              <input type="checkbox" id="gate-remember" />
+              Keep me signed in on this browser
+            </label>
+          </div>
 
           <div id="gate-error" class="banner err" hidden></div>
 
@@ -379,7 +388,8 @@
         </form>
 
         <div class="footnote">
-          Serving <span class="mono" id="gate-origin"></span>
+          <button class="btn ghost tiny" id="toggle-mode">Use a token instead</button>
+          <div style="margin-top:8px">Serving <span class="mono" id="gate-origin"></span></div>
         </div>
       </div>
     </div>
@@ -661,6 +671,7 @@
       metrics: null,
       history: [],           // { t, requests, byStatus }
       view: "overview",
+      gate: "password",       // password | token | secret
       filters: { endpoint: "", node: "", metric: "" },
       lastOk: 0,
       lastErr: "",
@@ -739,7 +750,11 @@
       const tok = await bearer();
       if (tok) headers.Authorization = "Bearer " + tok;
 
-      const res = await fetch(api(path), { headers, cache: "no-store" });
+      // 'same-origin' credentials carry the session cookie set by password
+      // login; token credentials ride in the header above.
+      const res = await fetch(api(path), {
+        headers, cache: "no-store", credentials: "same-origin",
+      });
       if (res.status === 401) throw new Unauthorized("unauthorized");
       if (res.status === 404) return null;           // route not mounted on this node
       if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
@@ -1221,21 +1236,52 @@
       const err = $("gate-error");
       err.hidden = !message;
       err.textContent = message || "";
-      (state.secret ? $("gate-secret") : $("gate-token")).focus();
+      (state.gate === "password" ? $("gate-password")
+        : state.secret ? $("gate-secret") : $("gate-token")).focus();
     }
 
     function showApp() {
       $("gate").hidden = true;
       $("app").hidden = false;
-      $("signout").hidden = !(state.token || state.secret);
+      // The session cookie is HttpOnly, so this cosmetic marker is how the
+      // panel knows there is something to sign out of. It carries nothing
+      // sensitive: if the session has really gone, the next call 401s and the
+      // gate comes back regardless.
+      $("signout").hidden = !(state.token || state.secret || store.get("piko.session"));
     }
 
+    // The gate offers a password by default and falls back to tokens, either
+    // because the operator asked for it or because the server has no password
+    // configured.
     function gateMode(mode) {
+      state.gate = mode;
+      $("field-password").hidden = mode === "token" || mode === "secret";
+      $("token-modes").hidden = mode === "password";
       $("mode-token").setAttribute("aria-pressed", String(mode === "token"));
       $("mode-secret").setAttribute("aria-pressed", String(mode === "secret"));
       $("field-token").hidden = mode !== "token";
       $("field-secret").hidden = mode !== "secret";
-      (mode === "token" ? $("gate-token") : $("gate-secret")).focus();
+      $("toggle-mode").textContent = mode === "password"
+        ? "Use a token instead" : "Use a password instead";
+      const focus = mode === "password" ? "gate-password"
+        : mode === "secret" ? "gate-secret" : "gate-token";
+      $(focus).focus();
+    }
+
+    async function loginWithPassword(password) {
+      const res = await fetch(api("login"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ password }),
+      });
+      if (res.status === 404) {
+        // No password configured on this server.
+        gateMode("token");
+        throw new Error("This server has no admin password set — use a token.");
+      }
+      if (res.status === 401) throw new Error("Incorrect password.");
+      if (!res.ok) throw new Error("Login failed (HTTP " + res.status + ").");
     }
 
     // --------------------------------------------------------------- events
@@ -1317,19 +1363,49 @@
       applyTheme(next);
       store.set("piko.theme", next, true);
     });
-    $("signout").addEventListener("click", () => {
-      store.del("piko.token"); store.del("piko.secret");
+    $("signout").addEventListener("click", async () => {
+      store.del("piko.token"); store.del("piko.secret"); store.del("piko.session");
       state.token = state.secret = ""; state.minted = { jwt: "", exp: 0 };
+      // Drops the session cookie too; harmless when signed in with a token.
+      try {
+        await fetch(api("logout"), { method: "POST", credentials: "same-origin" });
+      } catch { /* offline */ }
+      gateMode("password");
       showGate("");
     });
     $("shortcuts-close").addEventListener("click", () => { $("shortcuts").hidden = true; });
     $("mode-token").addEventListener("click", () => gateMode("token"));
     $("mode-secret").addEventListener("click", () => gateMode("secret"));
+    $("toggle-mode").addEventListener("click", () =>
+      gateMode(state.gate === "password" ? "token" : "password"));
 
     $("gate-form").addEventListener("submit", async (ev) => {
       ev.preventDefault();
+      const fail = (message) => {
+        $("gate-error").hidden = false;
+        $("gate-error").textContent = message;
+      };
+      $("gate-error").hidden = true;
+
+      if (state.gate === "password") {
+        const password = $("gate-password").value;
+        if (!password) return;
+        try {
+          await loginWithPassword(password);
+        } catch (err) {
+          return fail(err.message);
+        }
+        // The session lives in an HttpOnly cookie, so no credential is
+        // stored here — only the marker showApp uses.
+        state.token = state.secret = "";
+        store.set("piko.session", "1", true);
+        $("gate-password").value = "";
+        await refresh();
+        return;
+      }
+
       const persist = $("gate-remember").checked;
-      const useSecret = $("mode-secret").getAttribute("aria-pressed") === "true";
+      const useSecret = state.gate === "secret";
       const value = (useSecret ? $("gate-secret").value : $("gate-token").value).trim();
       if (!value) return;
 
@@ -1339,9 +1415,7 @@
       try {
         await bearer();
       } catch (err) {
-        $("gate-error").hidden = false;
-        $("gate-error").textContent = err.message;
-        return;
+        return fail(err.message);
       }
       await refresh();
       if (state.authed) {
