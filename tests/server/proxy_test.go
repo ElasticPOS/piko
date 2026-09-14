@@ -377,6 +377,83 @@ func TestProxy_TCP(t *testing.T) {
 	})
 }
 
+// Tests proxying TCP traffic to a group of upstreams within an endpoint.
+func TestProxy_TCPGroup(t *testing.T) {
+	node := cluster.NewNode()
+	node.Start()
+	defer node.Stop()
+
+	// Add a listener for each branch, both listening on the same endpoint,
+	// which reply with the branch they belong to.
+
+	listen := func(group string) {
+		upstream := client.Upstream{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   node.UpstreamAddr(),
+			},
+			Group: group,
+		}
+		ln, err := upstream.Listen(context.TODO(), "my-endpoint")
+		assert.NoError(t, err)
+		t.Cleanup(func() {
+			ln.Close()
+		})
+
+		go func() {
+			for {
+				conn, err := ln.Accept()
+				if errors.Is(err, client.ErrClosed) {
+					return
+				}
+				assert.NoError(t, err)
+
+				if _, err := conn.Write([]byte(group)); err != nil {
+					return
+				}
+				conn.Close()
+			}
+		}()
+	}
+	listen("branch-1")
+	listen("branch-2")
+
+	dialer := client.Dialer{
+		URL: &url.URL{
+			Scheme: "http",
+			Host:   node.ProxyAddr(),
+		},
+	}
+
+	dial := func(group string) string {
+		conn, err := dialer.Dial(
+			context.TODO(), "my-endpoint", client.WithGroup(group),
+		)
+		if !assert.NoError(t, err) {
+			return ""
+		}
+		defer conn.Close()
+
+		buf := make([]byte, 512)
+		n, err := conn.Read(buf)
+		assert.NoError(t, err)
+		return string(buf[:n])
+	}
+
+	// A connection addressed to a group is served by that group alone.
+
+	assert.Equal(t, "branch-1", dial("branch-1"))
+	assert.Equal(t, "branch-2", dial("branch-2"))
+
+	// A group nobody has joined refuses the connection, rather than falling
+	// back to the endpoint.
+
+	_, err := dialer.Dial(
+		context.TODO(), "my-endpoint", client.WithGroup("branch-3"),
+	)
+	assert.ErrorContains(t, err, "no available upstreams")
+}
+
 // Tests proxy authentication.
 func TestProxy_Auth(t *testing.T) {
 	endpointClaims := auth.JWTClaims{

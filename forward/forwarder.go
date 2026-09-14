@@ -19,15 +19,25 @@ type Forwarder struct {
 
 	endpointID string
 
+	// group is the group of upstreams within the endpoint to forward to, or
+	// empty to forward to any upstream on the endpoint.
+	group string
+
 	ln net.Listener
 
 	logger log.Logger
 }
 
-func NewForwarder(endpointID string, dialer *piko.Dialer, logger log.Logger) *Forwarder {
+func NewForwarder(
+	endpointID string,
+	group string,
+	dialer *piko.Dialer,
+	logger log.Logger,
+) *Forwarder {
 	return &Forwarder{
 		dialer:     dialer,
 		endpointID: endpointID,
+		group:      group,
 		logger:     logger,
 	}
 }
@@ -49,6 +59,7 @@ func (f *Forwarder) Forward(ln net.Listener) error {
 			"accepted connection",
 			zap.String("client", conn.RemoteAddr().String()),
 			zap.String("endpoint-id", f.endpointID),
+			zap.String("group", f.group),
 			zap.Error(err),
 		)
 
@@ -66,11 +77,17 @@ func (f *Forwarder) Close() error {
 func (f *Forwarder) forwardConn(conn net.Conn) {
 	defer conn.Close()
 
-	upstream, err := f.dialer.Dial(context.Background(), f.endpointID)
+	var opts []piko.DialOption
+	if f.group != "" {
+		opts = append(opts, piko.WithGroup(f.group))
+	}
+
+	upstream, err := f.dialer.Dial(context.Background(), f.endpointID, opts...)
 	if err != nil {
 		f.logger.Error(
 			"failed to dial endpoint",
 			zap.String("endpoint-id", f.endpointID),
+			zap.String("group", f.group),
 			zap.Error(err),
 		)
 		return
@@ -79,6 +96,7 @@ func (f *Forwarder) forwardConn(conn net.Conn) {
 	f.logger.Debug(
 		"dialed endpoint",
 		zap.String("endpoint-id", f.endpointID),
+		zap.String("group", f.group),
 		zap.Error(err),
 	)
 

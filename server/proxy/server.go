@@ -179,7 +179,10 @@ func (s *Server) proxyTCPRoute(c *gin.Context) {
 		}
 	}
 
-	s.tcpProxy.ServeHTTP(c.Writer, c.Request, endpointID)
+	// A TCP connection has no request path to address a group with, so the
+	// group is named by the dial URL instead. Like the endpoint, the group
+	// carries over when the connection is forwarded to another node.
+	s.tcpProxy.ServeHTTP(c.Writer, c.Request, endpointID, c.Query("group"))
 }
 
 func (s *Server) panicRoute(c *gin.Context, err any) {

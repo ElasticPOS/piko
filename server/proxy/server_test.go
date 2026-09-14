@@ -488,6 +488,109 @@ func TestServer_TCP(t *testing.T) {
 		}
 	})
 
+	// Tests a connection addressed to a group selects an upstream from that
+	// group.
+	t.Run("group", func(t *testing.T) {
+		echoLn, err := net.Listen("tcp", "127.0.0.1:0")
+		assert.NoError(t, err)
+		defer echoLn.Close()
+
+		go echoListener(echoLn)
+
+		server := NewServer(
+			&fakeManager{
+				handler: func(endpointID string, group string, _ bool) (upstream.Upstream, bool) {
+					assert.Equal(t, "my-endpoint", endpointID)
+					assert.Equal(t, "branch-1", group)
+					return &tcpUpstream{
+						addr: echoLn.Addr().String(),
+					}, true
+				},
+			},
+			config.Default().Proxy,
+			nil,
+			nil,
+			nil,
+			log.NewNopLogger(),
+		)
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		assert.NoError(t, err)
+		defer ln.Close()
+
+		// nolint
+		go server.Serve(ln)
+
+		conn, err := websocket.Dial(
+			context.TODO(),
+			"ws://"+ln.Addr().String()+"/_piko/v1/tcp/my-endpoint?group=branch-1",
+		)
+		assert.NoError(t, err)
+
+		_, err = conn.Write([]byte("foo"))
+		assert.NoError(t, err)
+
+		buf := make([]byte, 512)
+		n, err := conn.Read(buf)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, n)
+	})
+
+	// Tests a connection forwarded to another node keeps the group, as that
+	// node selects the upstream itself.
+	t.Run("group forward", func(t *testing.T) {
+		// The remote node doesn't upgrade the connection, so the request it
+		// received is inspected here rather than in the handler.
+		forwardedCh := make(chan string, 1)
+		remoteNode := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "true", r.Header.Get("x-piko-forward"))
+				forwardedCh <- r.URL.String()
+
+				w.WriteHeader(http.StatusOK)
+			},
+		))
+		defer remoteNode.Close()
+
+		server := NewServer(
+			&fakeManager{
+				handler: func(_ string, group string, allowForward bool) (upstream.Upstream, bool) {
+					assert.Equal(t, "branch-1", group)
+					assert.True(t, allowForward)
+					return &tcpUpstream{
+						addr:    remoteNode.Listener.Addr().String(),
+						forward: true,
+					}, true
+				},
+			},
+			config.Default().Proxy,
+			nil,
+			nil,
+			nil,
+			log.NewNopLogger(),
+		)
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		assert.NoError(t, err)
+		defer ln.Close()
+
+		// nolint
+		go server.Serve(ln)
+
+		// nolint
+		websocket.Dial(
+			context.TODO(),
+			"ws://"+ln.Addr().String()+"/_piko/v1/tcp/my-endpoint?group=branch-1",
+		)
+
+		select {
+		case url := <-forwardedCh:
+			assert.Equal(t, "/_piko/v1/tcp/my-endpoint?group=branch-1", url)
+		case <-time.After(time.Second * 5):
+			t.Fatal("connection not forwarded")
+		}
+	})
+
 	t.Run("upstream unreachable", func(t *testing.T) {
 		server := NewServer(
 			&fakeManager{

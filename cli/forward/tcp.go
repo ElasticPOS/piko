@@ -26,10 +26,29 @@ Examples:
 
   # Listen for connections on 0.0.0.0:3000.
   piko forward tcp 0.0.0.0:3000 my-endpoint
+
+  # Forward to the upstreams in group "branch-1" on endpoint "my-endpoint".
+  piko forward tcp 3000 my-endpoint --group branch-1
 `,
 	}
 
 	var logger log.Logger
+
+	var group string
+	cmd.Flags().StringVar(
+		&group,
+		"group",
+		"",
+		`
+The group of upstreams within the endpoint to forward to, such as the branch
+the machines sit in.
+
+Connections are load balanced among the upstreams in that group alone. If no
+upstream has joined the group the connection is refused, rather than falling
+back to the endpoint's other upstreams.
+
+Defaults to forwarding to any upstream on the endpoint, grouped or not.`,
+	)
 
 	cmd.PreRun = func(_ *cobra.Command, args []string) {
 		// Discard any ports in the configuration file and use from command
@@ -37,6 +56,7 @@ Examples:
 		conf.Ports = []config.PortConfig{{
 			Addr:       args[0],
 			EndpointID: args[1],
+			Group:      group,
 		}}
 
 		var err error

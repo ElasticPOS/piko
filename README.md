@@ -144,9 +144,17 @@ upstream on the endpoint.
 If no upstream has joined the addressed group, Piko replies `502` rather than
 falling back to the endpoint's other upstreams.
 
-Groups are limited to letters, digits, `-`, `_`, `.` and `~`. Only HTTP
-supports groups, as there is nowhere to name a group when connecting with raw
-TCP.
+With TCP there is no request path to carry a group, so Piko forward names it
+with a flag instead:
+```
+$ piko forward tcp 3000 my-endpoint --group branch-1
+```
+
+The same group may be set per port under `ports` in `forward.yaml`, and the
+[Go SDK](https://github.com/andydunstall/piko/wiki/Go-SDK) takes it as a dial
+option, `piko.WithGroup("branch-1")`.
+
+Groups are limited to letters, digits, `-`, `_`, `.` and `~`.
 
 Note a group is a route within an endpoint, not a security boundary: tokens
 scope themselves to endpoints, so a client permitted to access an endpoint may

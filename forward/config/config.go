@@ -21,6 +21,14 @@ type PortConfig struct {
 
 	// EndpointID is the endpoint ID to connect to.
 	EndpointID string `json:"endpoint_id" yaml:"endpoint_id"`
+
+	// Group is the group of upstreams within the endpoint to connect to, such
+	// as the branch the machines sit in.
+	//
+	// Connections are load balanced among the upstreams in that group alone.
+	//
+	// Defaults to connecting to any upstream on the endpoint, grouped or not.
+	Group string `json:"group" yaml:"group"`
 }
 
 // Host parses the given upstream address into a host and port. Return false if
