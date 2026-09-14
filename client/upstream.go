@@ -64,6 +64,19 @@ type Upstream struct {
 	// Defaults to no name (optional).
 	Name string
 
+	// Group identifies a set of clients within an endpoint, such as the branch
+	// the machine sits in.
+	//
+	// Requests addressed to the group are load balanced among its clients
+	// alone, whereas requests addressed to the endpoint are load balanced
+	// among all of its clients, grouped or not.
+	//
+	// Limited to the unreserved URL characters (RFC 3986), as the group is
+	// part of the route. The server rejects the connection otherwise.
+	//
+	// Defaults to no group (optional).
+	Group string
+
 	// TLSConfig specifies the TLS configuration to use with the Piko server.
 	//
 	// If nil, the default configuration is used.
@@ -231,9 +244,14 @@ func (u *Upstream) listenURL(endpointID string) string {
 	// Add the listen path to the URL.
 	listenURL.Path += "/piko/v1/upstream/" + endpointID
 
-	if u.Name != "" {
+	if u.Name != "" || u.Group != "" {
 		query := listenURL.Query()
-		query.Set("name", u.Name)
+		if u.Name != "" {
+			query.Set("name", u.Name)
+		}
+		if u.Group != "" {
+			query.Set("group", u.Group)
+		}
 		listenURL.RawQuery = query.Encode()
 	}
 

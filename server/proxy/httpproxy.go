@@ -64,7 +64,12 @@ func NewHTTPProxy(
 	return rp
 }
 
-func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, endpointID string) {
+func (p *HTTPProxy) ServeHTTP(
+	w http.ResponseWriter,
+	r *http.Request,
+	endpointID string,
+	group string,
+) {
 	// Whether the request was forwarded from another Piko node.
 	forwarded := r.Header.Get("x-piko-forward") == "true"
 
@@ -72,15 +77,24 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, endpointID
 	// of those upstreams. Note this includes remote nodes that are reporting
 	// they have an available upstream. We don't allow multiple hops, so if
 	// forwarded is true we only select from local nodes.
-	upstream, ok := p.upstreams.Select(endpointID, !forwarded)
+	upstream, ok := p.upstreams.Select(endpointID, group, !forwarded)
 	if !ok {
 		p.logger.Warn(
 			"no available upstreams",
 			zap.String("endpoint-id", endpointID),
+			zap.String("group", group),
 		)
 
 		_ = errorResponse(w, http.StatusBadGateway, "no available upstreams")
 		return
+	}
+
+	// The group prefix addresses Piko rather than the upstream service, so
+	// it's stripped once the request reaches the node holding the upstream.
+	// When forwarding to another node the prefix is kept, as that node selects
+	// the upstream itself.
+	if !upstream.Forward() {
+		stripGroupPath(r.URL)
 	}
 
 	p.ServeHTTPWithUpstream(w, r, endpointID, upstream)

@@ -49,7 +49,9 @@ func (p *TCPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, endpointID 
 	// of those upstreams. Note this includes remote nodes that are reporting
 	// they have an available upstream. We don't allow multiple hops, so if
 	// forwarded is true we only select from local nodes.
-	u, ok := p.upstreams.Select(endpointID, !forwarded)
+	// TCP connections address an endpoint by path, which leaves nowhere to
+	// name a group, so they're load balanced among all of its upstreams.
+	u, ok := p.upstreams.Select(endpointID, "", !forwarded)
 	if !ok {
 		p.logger.Warn(
 			"no available upstreams",

@@ -25,14 +25,15 @@ import (
 )
 
 type fakeManager struct {
-	handler func(endpointID string, allowForward bool) (upstream.Upstream, bool)
+	handler func(endpointID string, group string, allowForward bool) (upstream.Upstream, bool)
 }
 
 func (m *fakeManager) Select(
 	endpointID string,
+	group string,
 	allowForward bool,
 ) (upstream.Upstream, bool) {
-	return m.handler(endpointID, allowForward)
+	return m.handler(endpointID, group, allowForward)
 }
 
 func (m *fakeManager) AddConn(_ upstream.Upstream) {
@@ -52,6 +53,10 @@ func (u *tcpUpstream) Dial() (net.Conn, error) {
 
 func (u *tcpUpstream) EndpointID() string {
 	return "my-endpoint"
+}
+
+func (u *tcpUpstream) Group() string {
+	return ""
 }
 
 func (u *tcpUpstream) Forward() bool {
@@ -115,7 +120,7 @@ func TestServer_HTTP(t *testing.T) {
 
 		s := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return &tcpUpstream{
@@ -152,6 +157,112 @@ func TestServer_HTTP(t *testing.T) {
 		assert.Equal(t, "bar", buf.String())
 	})
 
+	// Tests a request addressed to a group selects an upstream from that
+	// group, and the group prefix is stripped before the request is proxied.
+	t.Run("group", func(t *testing.T) {
+		upstreamServer := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/foo/bar", r.URL.Path)
+				assert.Equal(t, "a=b", r.URL.RawQuery)
+
+				// nolint
+				w.Write([]byte("bar"))
+			},
+		))
+		defer upstreamServer.Close()
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		s := NewServer(
+			&fakeManager{
+				handler: func(endpointID string, group string, _ bool) (upstream.Upstream, bool) {
+					assert.Equal(t, "my-endpoint", endpointID)
+					assert.Equal(t, "branch-1", group)
+					return &tcpUpstream{
+						addr: upstreamServer.Listener.Addr().String(),
+					}, true
+				},
+			},
+			config.Default().Proxy,
+			nil,
+			nil,
+			nil,
+			log.NewNopLogger(),
+		)
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		url := fmt.Sprintf("http://%s/_g/branch-1/foo/bar?a=b", ln.Addr().String())
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Header.Add("x-piko-endpoint", "my-endpoint")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		assert.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		buf := new(strings.Builder)
+		// nolint
+		io.Copy(buf, resp.Body)
+		assert.Equal(t, "bar", buf.String())
+	})
+
+	// Tests a request forwarded to another node keeps the group prefix, as
+	// that node selects the upstream itself.
+	t.Run("group forward", func(t *testing.T) {
+		remoteNode := httptest.NewServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "/_g/branch-1/foo/bar", r.URL.Path)
+				assert.Equal(t, "true", r.Header.Get("x-piko-forward"))
+
+				// nolint
+				w.Write([]byte("bar"))
+			},
+		))
+		defer remoteNode.Close()
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		s := NewServer(
+			&fakeManager{
+				handler: func(_ string, group string, allowForward bool) (upstream.Upstream, bool) {
+					assert.Equal(t, "branch-1", group)
+					assert.True(t, allowForward)
+					return &tcpUpstream{
+						addr:    remoteNode.Listener.Addr().String(),
+						forward: true,
+					}, true
+				},
+			},
+			config.Default().Proxy,
+			nil,
+			nil,
+			nil,
+			log.NewNopLogger(),
+		)
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		url := fmt.Sprintf("http://%s/_g/branch-1/foo/bar", ln.Addr().String())
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Header.Add("x-piko-endpoint", "my-endpoint")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		assert.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
 	// Tests a request times out when upstream doesn't respond.
 	t.Run("timeout", func(t *testing.T) {
 		blockCh := make(chan struct{})
@@ -170,7 +281,7 @@ func TestServer_HTTP(t *testing.T) {
 		conf.Timeout = time.Millisecond
 		s := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return &tcpUpstream{
@@ -212,7 +323,7 @@ func TestServer_HTTP(t *testing.T) {
 
 		s := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return &tcpUpstream{
@@ -256,7 +367,7 @@ func TestServer_HTTP(t *testing.T) {
 
 		s := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return nil, false
@@ -335,7 +446,7 @@ func TestServer_TCP(t *testing.T) {
 
 		server := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return &tcpUpstream{
@@ -380,7 +491,7 @@ func TestServer_TCP(t *testing.T) {
 	t.Run("upstream unreachable", func(t *testing.T) {
 		server := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return &tcpUpstream{
@@ -445,7 +556,7 @@ func TestServer_Authentication(t *testing.T) {
 
 		s := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return &tcpUpstream{
@@ -558,7 +669,7 @@ func TestServer_Authentication(t *testing.T) {
 
 		s := NewServer(
 			&fakeManager{
-				handler: func(endpointID string, allowForward bool) (upstream.Upstream, bool) {
+				handler: func(endpointID string, _ string, allowForward bool) (upstream.Upstream, bool) {
 					assert.Equal(t, "my-endpoint", endpointID)
 					assert.True(t, allowForward)
 					return &tcpUpstream{

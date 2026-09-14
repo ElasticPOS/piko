@@ -22,6 +22,12 @@ var (
 // another Piko server node.
 type Upstream interface {
 	EndpointID() string
+	// Group returns the group within the endpoint the upstream registered
+	// itself in, or an empty string if the upstream isn't grouped.
+	//
+	// Requests addressed to a group are only load balanced among the
+	// upstreams in that group (see Manager.Select).
+	Group() string
 	// Dial opens a connection the the upstream.
 	//
 	// If the upstream signals it is no longer accepting connections, returns
@@ -44,6 +50,12 @@ type ConnMetadata struct {
 	// unique.
 	Name string `json:"name,omitempty"`
 
+	// Group is the group within the endpoint the client registered itself in,
+	// such as the branch its machine sits in.
+	//
+	// The group is client supplied and optional, so it may be empty.
+	Group string `json:"group,omitempty"`
+
 	// Addr is the client address the connection came from.
 	Addr string `json:"addr,omitempty"`
 
@@ -56,6 +68,7 @@ type ConnMetadata struct {
 // to the local node.
 type ConnUpstream struct {
 	endpointID  string
+	group       string
 	sess        *yamux.Session
 	name        string
 	addr        string
@@ -64,12 +77,14 @@ type ConnUpstream struct {
 
 func NewConnUpstream(
 	endpointID string,
+	group string,
 	sess *yamux.Session,
 	name string,
 	addr string,
 ) *ConnUpstream {
 	return &ConnUpstream{
 		endpointID:  endpointID,
+		group:       group,
 		sess:        sess,
 		name:        name,
 		addr:        addr,
@@ -81,6 +96,7 @@ func NewConnUpstream(
 func (u *ConnUpstream) Metadata() ConnMetadata {
 	return ConnMetadata{
 		Name:        u.name,
+		Group:       u.group,
 		Addr:        u.addr,
 		ConnectedAt: u.connectedAt.UnixMilli(),
 	}
@@ -88,6 +104,10 @@ func (u *ConnUpstream) Metadata() ConnMetadata {
 
 func (u *ConnUpstream) EndpointID() string {
 	return u.endpointID
+}
+
+func (u *ConnUpstream) Group() string {
+	return u.group
 }
 
 func (u *ConnUpstream) Dial() (net.Conn, error) {
@@ -105,13 +125,20 @@ func (u *ConnUpstream) Forward() bool {
 // NodeUpstream represents a remote Piko server node.
 type NodeUpstream struct {
 	endpointID string
+	group      string
 	node       *cluster.Node
 	tlsConfig  *tls.Config
 }
 
-func NewNodeUpstream(endpointID string, node *cluster.Node, tlsConfig *tls.Config) *NodeUpstream {
+func NewNodeUpstream(
+	endpointID string,
+	group string,
+	node *cluster.Node,
+	tlsConfig *tls.Config,
+) *NodeUpstream {
 	return &NodeUpstream{
 		endpointID: endpointID,
+		group:      group,
 		node:       node,
 		tlsConfig:  tlsConfig,
 	}
@@ -119,6 +146,10 @@ func NewNodeUpstream(endpointID string, node *cluster.Node, tlsConfig *tls.Confi
 
 func (u *NodeUpstream) EndpointID() string {
 	return u.endpointID
+}
+
+func (u *NodeUpstream) Group() string {
+	return u.group
 }
 
 func (u *NodeUpstream) Dial() (net.Conn, error) {

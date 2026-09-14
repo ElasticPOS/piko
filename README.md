@@ -117,6 +117,41 @@ authenticate with the server and forward connections via TLS.
 You can also use the [Go SDK](https://github.com/andydunstall/piko/wiki/Go-SDK)
 to open a `net.Conn` that's connected to the configured endpoint.
 
+### Groups
+
+Upstreams listening on the same endpoint may join a group, such as the branch
+or site their machine sits in. Requests addressed to a group are load balanced
+among the upstreams in that group alone, whereas requests addressed to the
+endpoint are load balanced among all of its upstreams, grouped or not.
+
+An upstream joins a group with `--group`, such as the two machines at branch 1
+both listening on endpoint `my-endpoint`:
+```
+$ piko agent http my-endpoint 3000 --group branch-1
+```
+
+Requests address a group with a `/_g/<group>/` path prefix, such as to send
+`/api/orders` to an upstream in `branch-1`:
+```
+$ curl http://my-endpoint.piko.example.com/_g/branch-1/api/orders
+```
+
+The prefix addresses Piko rather than your service, so it's stripped before the
+request is proxied, meaning the upstream above serves `/api/orders`. Requests
+without a prefix are unaffected and continue to be load balanced among every
+upstream on the endpoint.
+
+If no upstream has joined the addressed group, Piko replies `502` rather than
+falling back to the endpoint's other upstreams.
+
+Groups are limited to letters, digits, `-`, `_`, `.` and `~`. Only HTTP
+supports groups, as there is nowhere to name a group when connecting with raw
+TCP.
+
+Note a group is a route within an endpoint, not a security boundary: tokens
+scope themselves to endpoints, so a client permitted to access an endpoint may
+address any of its groups.
+
 ## Authentication
 
 Piko can authenticate incoming connections with a JWT. Auth is configured

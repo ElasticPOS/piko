@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -226,6 +227,85 @@ func TestProxy_HTTP(t *testing.T) {
 		assert.NoError(t, json.NewDecoder(resp.Body).Decode(&m))
 		assert.Equal(t, "no available upstreams", m.Error)
 	})
+}
+
+// Tests proxying HTTP traffic to a group of upstreams within an endpoint.
+func TestProxy_Group(t *testing.T) {
+	node := cluster.NewNode()
+	node.Start()
+	defer node.Stop()
+
+	// Add an upstream listener for each branch, both listening on the same
+	// endpoint, whose HTTP server echoes the branch it belongs to and the path
+	// it was asked for.
+
+	listen := func(group string) {
+		upstream := client.Upstream{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   node.UpstreamAddr(),
+			},
+			Group: group,
+		}
+		ln, err := upstream.Listen(context.TODO(), "my-endpoint")
+		assert.NoError(t, err)
+
+		server := httptest.NewUnstartedServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if _, err := w.Write([]byte(group + " " + r.URL.Path)); err != nil {
+					panic("write bytes: " + err.Error())
+				}
+			},
+		))
+		server.Listener = ln
+		go server.Start()
+		t.Cleanup(server.Close)
+	}
+	listen("branch-1")
+	listen("branch-2")
+
+	get := func(path string) (int, string) {
+		req, _ := http.NewRequest(
+			http.MethodGet, "http://"+node.ProxyAddr()+path, nil,
+		)
+		req.Header.Add("x-piko-endpoint", "my-endpoint")
+
+		httpClient := &http.Client{}
+		resp, err := httpClient.Do(req)
+		assert.NoError(t, err)
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		assert.NoError(t, err)
+		return resp.StatusCode, string(body)
+	}
+
+	// A request addressed to a group is served by that group alone, with the
+	// group prefix stripped.
+
+	status, body := get("/_g/branch-1/foo")
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "branch-1 /foo", body)
+
+	status, body = get("/_g/branch-2/foo")
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "branch-2 /foo", body)
+
+	// A request addressed to the endpoint is served by either group, without
+	// the upstream seeing a group at all.
+
+	status, body = get("/foo")
+	assert.Equal(t, http.StatusOK, status)
+	assert.Contains(t, []string{"branch-1 /foo", "branch-2 /foo"}, body)
+
+	// A group nobody has joined has no upstreams, rather than falling back to
+	// the endpoint.
+
+	status, body = get("/_g/branch-3/foo")
+	assert.Equal(t, http.StatusBadGateway, status)
+	m := errorMessage{}
+	assert.NoError(t, json.NewDecoder(strings.NewReader(body)).Decode(&m))
+	assert.Equal(t, "no available upstreams", m.Error)
 }
 
 func TestProxy_TCP(t *testing.T) {

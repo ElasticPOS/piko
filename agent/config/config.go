@@ -430,6 +430,17 @@ type Config struct {
 	// Defaults to the hostname of the machine.
 	Name string `json:"name" yaml:"name"`
 
+	// Group identifies a set of agents within an endpoint, such as the branch
+	// the machine sits in.
+	//
+	// Requests addressed to the group are load balanced among its agents
+	// alone, whereas requests addressed to the endpoint are load balanced
+	// among all of its agents, grouped or not.
+	//
+	// Defaults to no group, meaning the agent only serves requests addressed
+	// to the endpoint.
+	Group string `json:"group" yaml:"group"`
+
 	Listeners []ListenerConfig `json:"listeners" yaml:"listeners"`
 
 	Connect ConnectConfig `json:"connect" yaml:"connect"`
@@ -518,6 +529,25 @@ Several agents may listen on the same endpoint, so the name is what tells them
 apart when inspecting the endpoint's upstreams.
 
 Defaults to the hostname of the machine.`,
+	)
+
+	fs.StringVar(
+		&c.Group,
+		"group",
+		c.Group,
+		`
+A group identifying a set of agents within an endpoint, such as the branch the
+machine sits in.
+
+Requests addressed to the group are load balanced among its agents alone,
+whereas requests addressed to the endpoint are load balanced among all of its
+agents, grouped or not. Such as if agents in group 'branch-1' listen on
+endpoint 'my-endpoint', requests to path '/_g/branch-1/foo' are served by those
+agents with path '/foo'.
+
+Limited to letters, digits, '-', '_', '.' and '~'.
+
+Defaults to no group.`,
 	)
 
 	c.Connect.RegisterFlags(fs)

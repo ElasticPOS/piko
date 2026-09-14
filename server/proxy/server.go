@@ -147,7 +147,11 @@ func (s *Server) proxyHTTPRoute(c *gin.Context) {
 		}
 	}
 
-	s.httpProxy.ServeHTTP(c.Writer, c.Request, endpointID)
+	// The token scopes the client to an endpoint, not to the groups within it,
+	// so the group is read after the endpoint is authorized.
+	group := GroupFromRequest(c.Request)
+
+	s.httpProxy.ServeHTTP(c.Writer, c.Request, endpointID, group)
 }
 
 func (s *Server) proxyTCPRoute(c *gin.Context) {
@@ -195,6 +199,12 @@ func (s *Server) panicRoute(c *gin.Context, err any) {
 func EndpointIDFromRequest(r *http.Request) string {
 	endpointID := r.Header.Get("x-piko-endpoint")
 	if endpointID != "" {
+		if strings.Contains(endpointID, "/") {
+			// Upstreams register on a path segment so they can never claim an
+			// endpoint ID containing a separator, which is also what
+			// distinguishes an endpoint from a group of upstreams within it.
+			return ""
+		}
 		return endpointID
 	}
 

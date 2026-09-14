@@ -22,7 +22,11 @@ type Manager interface {
 	// If there are no upstreams connected for the endpoint, and 'allowForward'
 	// is true, it will look for another node in the cluster that has an
 	// upstream connection for the endpoint and use that node as the upstream.
-	Select(endpointID string, allowForward bool) (Upstream, bool)
+	//
+	// If 'group' is given, only upstreams that registered themselves in that
+	// group are considered. If it's empty, any upstream for the endpoint may
+	// be selected, whether it's grouped or not.
+	Select(endpointID string, group string, allowForward bool) (Upstream, bool)
 
 	// AddConn adds a local upstream connection.
 	AddConn(u Upstream)
@@ -71,6 +75,11 @@ func (lb *loadBalancer) Next() Upstream {
 type LoadBalancedManager struct {
 	localUpstreams map[string]*loadBalancer
 
+	// localGroups contains the grouped subset of localUpstreams, keyed by
+	// groupKey. Grouped upstreams appear in both, as an ungrouped request must
+	// still reach them.
+	localGroups map[string]*loadBalancer
+
 	mu sync.Mutex
 
 	cluster *cluster.State
@@ -83,17 +92,31 @@ type LoadBalancedManager struct {
 func NewLoadBalancedManager(cluster *cluster.State, proxyClientTLSConfig *tls.Config) *LoadBalancedManager {
 	return &LoadBalancedManager{
 		localUpstreams: make(map[string]*loadBalancer),
+		localGroups:    make(map[string]*loadBalancer),
 		cluster:        cluster,
 		tlsConfig:      proxyClientTLSConfig,
 		metrics:        NewMetrics(),
 	}
 }
 
-func (m *LoadBalancedManager) Select(endpointID string, allowRemote bool) (Upstream, bool) {
+func (m *LoadBalancedManager) Select(
+	endpointID string,
+	group string,
+	allowRemote bool,
+) (Upstream, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	lb, ok := m.localUpstreams[endpointID]
+	// Groups are registered as routes in their own right, both locally and in
+	// the cluster, so looking one up is the same lookup under another key.
+	key := endpointID
+	local := m.localUpstreams
+	if group != "" {
+		key = groupKey(endpointID, group)
+		local = m.localGroups
+	}
+
+	lb, ok := local[key]
 	if ok {
 		m.metrics.UpstreamRequestsTotal.Inc()
 		return lb.Next(), true
@@ -102,14 +125,14 @@ func (m *LoadBalancedManager) Select(endpointID string, allowRemote bool) (Upstr
 		return nil, false
 	}
 
-	node, ok := m.cluster.LookupEndpoint(endpointID)
+	node, ok := m.cluster.LookupEndpoint(key)
 	if !ok {
 		return nil, false
 	}
 	m.metrics.RemoteRequestsTotal.With(prometheus.Labels{
 		"node_id": node.ID,
 	}).Inc()
-	return NewNodeUpstream(endpointID, node, m.tlsConfig), true
+	return NewNodeUpstream(endpointID, group, node, m.tlsConfig), true
 }
 
 func (m *LoadBalancedManager) AddConn(u Upstream) {
@@ -127,6 +150,19 @@ func (m *LoadBalancedManager) AddConn(u Upstream) {
 	m.localUpstreams[u.EndpointID()] = lb
 
 	m.cluster.AddLocalEndpoint(u.EndpointID())
+
+	if group := u.Group(); group != "" {
+		key := groupKey(u.EndpointID(), group)
+
+		lb, ok := m.localGroups[key]
+		if !ok {
+			lb = &loadBalancer{}
+		}
+		lb.Add(u)
+		m.localGroups[key] = lb
+
+		m.cluster.AddLocalEndpoint(key)
+	}
 
 	m.metrics.ConnectedUpstreams.Inc()
 }
@@ -146,6 +182,18 @@ func (m *LoadBalancedManager) RemoveConn(u Upstream) {
 	}
 
 	m.cluster.RemoveLocalEndpoint(u.EndpointID())
+
+	if group := u.Group(); group != "" {
+		key := groupKey(u.EndpointID(), group)
+
+		if lb, ok := m.localGroups[key]; ok {
+			if lb.Remove(u) {
+				delete(m.localGroups, key)
+			}
+
+			m.cluster.RemoveLocalEndpoint(key)
+		}
+	}
 
 	m.metrics.ConnectedUpstreams.Dec()
 }
@@ -184,6 +232,17 @@ func (m *LoadBalancedManager) Upstreams(endpointID string) []ConnMetadata {
 		upstreams = append(upstreams, conn.Metadata())
 	}
 	return upstreams
+}
+
+// groupKey is the route a group of upstreams within an endpoint is registered
+// under.
+//
+// Groups are registered as routes of their own so a group can be looked up on
+// a remote node, as the cluster only gossips endpoint names and their listener
+// counts. '/' is used as the separator as an endpoint ID can never contain
+// one: it comes from either a host name or a path segment.
+func groupKey(endpointID string, group string) string {
+	return endpointID + "/" + group
 }
 
 func (m *LoadBalancedManager) Metrics() *Metrics {
