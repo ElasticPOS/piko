@@ -23,6 +23,7 @@ import (
 	"github.com/andydunstall/piko/pkg/log"
 	"github.com/andydunstall/piko/pkg/middleware"
 	pikowebsocket "github.com/andydunstall/piko/pkg/websocket"
+	"github.com/andydunstall/piko/pkg/yamuxconn"
 	"github.com/andydunstall/piko/server/cluster"
 	"github.com/andydunstall/piko/server/config"
 )
@@ -70,7 +71,7 @@ func NewServer(
 			TLSConfig: tlsConfig,
 			ErrorLog:  logger.StdLogger(zapcore.WarnLevel),
 		},
-		websocketUpgrader: &websocket.Upgrader{},
+		websocketUpgrader: pikowebsocket.NewUpgrader(),
 		ctx:               ctx,
 		cancel:            cancel,
 		cluster:           cluster,
@@ -237,7 +238,7 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	muxConfig.Logger = s.logger.StdLogger(zap.WarnLevel)
 	muxConfig.LogOutput = nil
 	muxConfig.MaxStreamWindowSize = s.streamConfig.MaxWindowSize
-	sess, err := yamux.Server(conn, muxConfig)
+	sess, err := yamux.Server(yamuxconn.New(conn), muxConfig)
 	if err != nil {
 		// Will not happen.
 		panic("yamux server: " + err.Error())

@@ -13,6 +13,7 @@ import (
 
 	"github.com/andydunstall/piko/pkg/backoff"
 	"github.com/andydunstall/piko/pkg/websocket"
+	"github.com/andydunstall/piko/pkg/yamuxconn"
 )
 
 const defaultMaxWindowSize = 256 * 1024
@@ -91,6 +92,15 @@ type Upstream struct {
 	// Must be >=256KiB. Defaults to 256KiB.
 	MaxWindowSize uint32
 
+	// Compression enables per-message compression of the connection to the
+	// Piko server, if the server supports it.
+	//
+	// This trades CPU for bandwidth, so helps most on slow links carrying
+	// compressible responses.
+	//
+	// Defaults to false.
+	Compression bool
+
 	// Logger is an optional logger to log connection state changes.
 	Logger Logger
 }
@@ -148,6 +158,7 @@ func (u *Upstream) connect(ctx context.Context, endpointID string) (*yamux.Sessi
 			websocket.WithTenantID(u.TenantID),
 			websocket.WithTLSConfig(u.TLSConfig),
 			websocket.WithProxyURL(u.ProxyURL),
+			websocket.WithCompression(u.Compression),
 		)
 		if err == nil {
 			u.logger().Debug(
@@ -164,7 +175,7 @@ func (u *Upstream) connect(ctx context.Context, endpointID string) (*yamux.Sessi
 			muxConfig.Logger = nil
 			muxConfig.LogOutput = &yamuxLogWriter{logger: u.logger()}
 			muxConfig.MaxStreamWindowSize = maxWindowSize
-			sess, err := yamux.Client(conn, muxConfig)
+			sess, err := yamux.Client(yamuxconn.New(conn), muxConfig)
 			if err != nil {
 				// Will not happen.
 				panic("yamux client: " + err.Error())

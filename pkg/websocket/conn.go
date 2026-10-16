@@ -48,11 +48,32 @@ func (e *RetryableError) Error() string {
 	return e.err.Error()
 }
 
+// bufferSize is the read and write buffer size of each connection.
+//
+// gorilla/websocket defaults to 4KiB, which splits every message larger than
+// that into multiple frames and flushes each to the network separately. Yamux
+// writes data frames of up to 32KiB, so a larger buffer sends each frame as a
+// single WebSocket frame.
+const bufferSize = 64 * 1024
+
+// NewUpgrader returns an upgrader for accepting connections.
+//
+// It accepts per-message compression when the client offers it, though only
+// compresses when the client opts in, so clients that don't are unaffected.
+func NewUpgrader() *websocket.Upgrader {
+	return &websocket.Upgrader{
+		ReadBufferSize:    bufferSize,
+		WriteBufferSize:   bufferSize,
+		EnableCompression: true,
+	}
+}
+
 type dialOptions struct {
-	token     string
-	tenantID  string
-	tlsConfig *tls.Config
-	proxyURL  *url.URL
+	token       string
+	tenantID    string
+	tlsConfig   *tls.Config
+	proxyURL    *url.URL
+	compression bool
 }
 
 type DialOption interface {
@@ -103,6 +124,18 @@ func WithTLSConfig(config *tls.Config) DialOption {
 	return tlsConfigOption{TLSConfig: config}
 }
 
+type compressionOption bool
+
+func (o compressionOption) apply(opts *dialOptions) {
+	opts.compression = bool(o)
+}
+
+// WithCompression offers per-message compression (permessage-deflate) to the
+// server. If the server accepts, messages are compressed in both directions.
+func WithCompression(enabled bool) DialOption {
+	return compressionOption(enabled)
+}
+
 // Conn implements a [net.Conn] using WebSockets as the underlying transport.
 //
 // This adds a small amount of overhead compared to using TCP directly, though
@@ -127,7 +160,10 @@ func Dial(ctx context.Context, u string, opts ...DialOption) (*Conn, error) {
 	}
 
 	dialer := &websocket.Dialer{
-		HandshakeTimeout: 60 * time.Second,
+		HandshakeTimeout:  60 * time.Second,
+		ReadBufferSize:    bufferSize,
+		WriteBufferSize:   bufferSize,
+		EnableCompression: options.compression,
 	}
 	if options.proxyURL != nil {
 		dialer.Proxy = func(*http.Request) (*url.URL, error) {
