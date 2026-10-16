@@ -60,9 +60,22 @@ fi
 # sent and the node lingers as a flapping ghost in every peer's gossip state.
 # Upstream tunnels are long-lived, so the drain always runs the full period.
 #
+# Proxy timeouts and stream window. The defaults (10s read/write, 30s proxy
+# timeout, 256KiB window) broke large responses: Go's http.Server WriteTimeout
+# and the proxy timeout both bound the WHOLE response, so the POS panel's 9MB
+# JS bundle was cut off at 10s. With a 256KiB yamux window, throughput per
+# stream is ~window/RTT (~600KB/s Belgrade<->Fly), so that download could
+# never finish in time. read-header-timeout stays short to guard against
+# slowloris; proxy.timeout still bounds a hung upstream.
+#
 # Build the argument list with `set --` so the multi-line PEM survives as a
 # single argument; the old unquoted "$AUTH_ARGS" word-splitting would mangle it.
 set -- server \
+    --proxy.timeout "${PROXY_TIMEOUT:-5m}" \
+    --proxy.http.read-timeout "${PROXY_READ_TIMEOUT:-0}" \
+    --proxy.http.read-header-timeout "${PROXY_READ_HEADER_TIMEOUT:-10s}" \
+    --proxy.http.write-timeout "${PROXY_WRITE_TIMEOUT:-0}" \
+    --stream.max-window-size "${STREAM_MAX_WINDOW_SIZE:-4194304}" \
     --cluster.node-id-prefix "${FLY_MACHINE_ID:-local}-" \
     --proxy.bind-addr ":8000" \
     --proxy.advertise-addr "${ADVERTISE_IP}:8000" \
