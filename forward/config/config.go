@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/log"
 )
 
@@ -60,6 +61,9 @@ func (c *PortConfig) Validate() error {
 	}
 	if c.EndpointID == "" {
 		return fmt.Errorf("missing endpoint id")
+	}
+	if err := group.Validate(c.Group); err != nil {
+		return err
 	}
 	return nil
 }

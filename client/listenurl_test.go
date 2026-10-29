@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"net/url"
 	"testing"
 
@@ -38,4 +39,21 @@ func TestUpstream_ListenURL(t *testing.T) {
 			upstream.listenURL("my-endpoint"),
 		)
 	})
+}
+
+// Tests an invalid group fails before connecting, rather than being rejected
+// by the server.
+func TestInvalidGroup(t *testing.T) {
+	// Nothing listens on the URL, so only validation can fail fast.
+	serverURL := &url.URL{Scheme: "http", Host: "127.0.0.1:1"}
+
+	upstream := &Upstream{URL: serverURL, Group: "branch 1"}
+	_, err := upstream.Listen(context.TODO(), "my-endpoint")
+	assert.ErrorContains(t, err, "group")
+	_, err = upstream.ListenAndForward(context.TODO(), "my-endpoint", "localhost:3000")
+	assert.ErrorContains(t, err, "group")
+
+	dialer := &Dialer{URL: serverURL}
+	_, err = dialer.Dial(context.TODO(), "my-endpoint", WithGroup("branch/1"))
+	assert.ErrorContains(t, err, "group")
 }

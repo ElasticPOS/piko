@@ -56,14 +56,19 @@ func TestLocalLoadBalancer(t *testing.T) {
 	assert.Equal(t, "2", lb.Next().EndpointID())
 	assert.Equal(t, "3", lb.Next().EndpointID())
 
-	assert.False(t, lb.Remove(u2))
-	assert.False(t, lb.Remove(u3))
+	assert.True(t, lb.Remove(u2))
+	assert.True(t, lb.Remove(u3))
 	assert.Equal(t, "1", lb.Next().EndpointID())
 	assert.Equal(t, "4", lb.Next().EndpointID())
 	assert.Equal(t, "1", lb.Next().EndpointID())
 
-	assert.False(t, lb.Remove(u1))
+	assert.True(t, lb.Remove(u1))
+	assert.False(t, lb.Empty())
 	assert.True(t, lb.Remove(u4))
+	assert.True(t, lb.Empty())
+
+	// Removing an upstream that's already gone is a no-op.
+	assert.False(t, lb.Remove(u4))
 
 	assert.Nil(t, lb.Next())
 }
@@ -157,4 +162,42 @@ func TestLoadBalancedManager_Upstreams(t *testing.T) {
 
 	m.RemoveConn(unnamed)
 	assert.Empty(t, m.Upstreams("my-endpoint"))
+}
+
+// Tests grouped upstreams are registered with the cluster once under their
+// endpoint, with the group kept apart, and that removing an upstream twice
+// only removes it once.
+func TestLoadBalancedManager_ClusterGroups(t *testing.T) {
+	state := cluster.NewState(&cluster.Node{ID: "local"}, log.NewNopLogger())
+	m := NewLoadBalancedManager(state, nil)
+
+	u1 := &fakeUpstream{endpointID: "my-endpoint", group: "branch-1"}
+	u2 := &fakeUpstream{endpointID: "my-endpoint", group: "branch-1"}
+	m.AddConn(u1)
+	m.AddConn(u2)
+
+	local := state.LocalNode()
+	assert.Equal(t, map[string]int{"my-endpoint": 2}, local.Endpoints)
+	assert.Equal(t, map[string]int{"my-endpoint/branch-1": 2}, local.Groups)
+	assert.Equal(t, 2, local.Metadata().Upstreams)
+	assert.Equal(t, 1, local.Metadata().Endpoints)
+	assert.Equal(t, 2, state.AvgConns())
+
+	// An upstream may be removed both when it refuses a connection and when
+	// it disconnects, which must not remove the other upstreams.
+	m.RemoveConn(u1)
+	m.RemoveConn(u1)
+
+	local = state.LocalNode()
+	assert.Equal(t, map[string]int{"my-endpoint": 1}, local.Endpoints)
+	assert.Equal(t, map[string]int{"my-endpoint/branch-1": 1}, local.Groups)
+
+	u, ok := m.Select("my-endpoint", "branch-1", false)
+	require.True(t, ok)
+	assert.Equal(t, u2, u)
+
+	m.RemoveConn(u2)
+	local = state.LocalNode()
+	assert.Empty(t, local.Endpoints)
+	assert.Empty(t, local.Groups)
 }

@@ -59,6 +59,13 @@ Defaults to forwarding to any upstream on the endpoint, grouped or not.`,
 			Group:      group,
 		}}
 
+		// The parent command validates the configuration before the ports
+		// are replaced above, so validate the port from the command line.
+		if err := conf.Ports[0].Validate(); err != nil {
+			fmt.Printf("config: port: %s\n", err.Error())
+			os.Exit(1)
+		}
+
 		var err error
 		logger, err = log.NewLogger(conf.Log.Level, conf.Log.Subsystems)
 		if err != nil {

@@ -81,12 +81,12 @@ func TestCluster_Proxy(t *testing.T) {
 			Nodes: 3,
 		})
 
-		// A group is gossiped as a route of its own, so node 2 learns about
-		// both the endpoint and the group within it.
-		remoteEndpointCh := make(chan string, 8)
-		manager.Nodes()[1].ClusterState().OnRemoteEndpointUpdate(
-			func(_ string, endpointID string) {
-				remoteEndpointCh <- endpointID
+		// A group is gossiped alongside its endpoint, so node 2 learns about
+		// the group within the endpoint.
+		remoteGroupCh := make(chan string, 8)
+		manager.Nodes()[1].ClusterState().OnRemoteGroupUpdate(
+			func(_ string, key string) {
+				remoteGroupCh <- key
 			},
 		)
 
@@ -115,8 +115,8 @@ func TestCluster_Proxy(t *testing.T) {
 		defer server.Close()
 
 		// Wait for node 2 to learn about the group.
-		for endpointID := range remoteEndpointCh {
-			if endpointID == "my-endpoint/branch-1" {
+		for key := range remoteGroupCh {
+			if key == "my-endpoint/branch-1" {
 				break
 			}
 		}

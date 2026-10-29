@@ -65,3 +65,15 @@ func TestStripGroupPath(t *testing.T) {
 		assert.Equal(t, test.want, u.EscapedPath(), test.path)
 	}
 }
+
+// Tests the group prefix is stripped from a copy of the request, leaving the
+// original request (which the access log reads) with the client's path.
+func TestWithoutGroupPath(t *testing.T) {
+	r, err := http.NewRequest(http.MethodGet, "http://example.com/_g/branch-1/foo", nil)
+	require.NoError(t, err)
+
+	stripped := withoutGroupPath(r)
+
+	assert.Equal(t, "/foo", stripped.URL.Path)
+	assert.Equal(t, "/_g/branch-1/foo", r.URL.Path)
+}

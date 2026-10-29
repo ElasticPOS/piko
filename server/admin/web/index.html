@@ -884,17 +884,10 @@
       }
     }
 
-    // A group of upstreams within an endpoint is gossiped as a route of its
-    // own, '<endpoint>/<group>', so other nodes can forward to the group. They
-    // are dropped wherever endpoints are listed, as the upstreams they hold
-    // are already counted under their endpoint.
-    const endpointEntries = (endpoints) =>
-      Object.entries(endpoints || {}).filter(([id]) => !id.includes("/"));
-
     function aggregateEndpoints() {
       const map = new Map();
       for (const node of Object.values(state.details)) {
-        for (const [id, listeners] of endpointEntries(node.endpoints)) {
+        for (const [id, listeners] of Object.entries(node.endpoints || {})) {
           if (!map.has(id)) map.set(id, { id, upstreams: 0, nodes: [] });
           const e = map.get(id);
           e.upstreams += listeners;
@@ -1290,7 +1283,7 @@
     function nodeDrawer(id) {
       const meta = state.nodes.find((n) => n.id === id) || {};
       const detail = state.details[id];
-      const endpoints = endpointEntries(detail?.endpoints);
+      const endpoints = Object.entries(detail?.endpoints || {});
       openDrawer("Node · " + id, `
         <dl class="kv">
           <dt>Node ID</dt><dd>${esc(id)}</dd>

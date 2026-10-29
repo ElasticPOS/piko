@@ -46,18 +46,22 @@ func (lb *loadBalancer) Add(u Upstream) {
 	lb.upstreams = append(lb.upstreams, u)
 }
 
+// Remove removes the upstream, returning false if it wasn't found.
 func (lb *loadBalancer) Remove(u Upstream) bool {
 	for i := 0; i != len(lb.upstreams); i++ {
 		if lb.upstreams[i] != u {
 			continue
 		}
 		lb.upstreams = append(lb.upstreams[:i], lb.upstreams[i+1:]...)
-		if len(lb.upstreams) == 0 {
-			return true
+		if len(lb.upstreams) > 0 {
+			lb.nextIndex %= len(lb.upstreams)
 		}
-		lb.nextIndex %= len(lb.upstreams)
-		return false
+		return true
 	}
+	return false
+}
+
+func (lb *loadBalancer) Empty() bool {
 	return len(lb.upstreams) == 0
 }
 
@@ -76,7 +80,7 @@ type LoadBalancedManager struct {
 	localUpstreams map[string]*loadBalancer
 
 	// localGroups contains the grouped subset of localUpstreams, keyed by
-	// groupKey. Grouped upstreams appear in both, as an ungrouped request must
+	// cluster.GroupKey. Grouped upstreams appear in both, as an ungrouped request must
 	// still reach them.
 	localGroups map[string]*loadBalancer
 
@@ -107,16 +111,13 @@ func (m *LoadBalancedManager) Select(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Groups are registered as routes in their own right, both locally and in
-	// the cluster, so looking one up is the same lookup under another key.
-	key := endpointID
-	local := m.localUpstreams
-	if group != "" {
-		key = groupKey(endpointID, group)
-		local = m.localGroups
+	var lb *loadBalancer
+	var ok bool
+	if group == "" {
+		lb, ok = m.localUpstreams[endpointID]
+	} else {
+		lb, ok = m.localGroups[cluster.GroupKey(endpointID, group)]
 	}
-
-	lb, ok := local[key]
 	if ok {
 		m.metrics.UpstreamRequestsTotal.Inc()
 		return lb.Next(), true
@@ -125,7 +126,12 @@ func (m *LoadBalancedManager) Select(
 		return nil, false
 	}
 
-	node, ok := m.cluster.LookupEndpoint(key)
+	var node *cluster.Node
+	if group == "" {
+		node, ok = m.cluster.LookupEndpoint(endpointID)
+	} else {
+		node, ok = m.cluster.LookupGroup(endpointID, group)
+	}
 	if !ok {
 		return nil, false
 	}
@@ -152,7 +158,7 @@ func (m *LoadBalancedManager) AddConn(u Upstream) {
 	m.cluster.AddLocalEndpoint(u.EndpointID())
 
 	if group := u.Group(); group != "" {
-		key := groupKey(u.EndpointID(), group)
+		key := cluster.GroupKey(u.EndpointID(), group)
 
 		lb, ok := m.localGroups[key]
 		if !ok {
@@ -161,21 +167,24 @@ func (m *LoadBalancedManager) AddConn(u Upstream) {
 		lb.Add(u)
 		m.localGroups[key] = lb
 
-		m.cluster.AddLocalEndpoint(key)
+		m.cluster.AddLocalGroup(u.EndpointID(), group)
 	}
 
 	m.metrics.ConnectedUpstreams.Inc()
 }
 
+// RemoveConn removes the upstream connection. Removing an upstream that was
+// already removed has no effect, as an upstream may be removed both when it
+// disconnects and when it refuses a connection (see ErrGone).
 func (m *LoadBalancedManager) RemoveConn(u Upstream) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	lb, ok := m.localUpstreams[u.EndpointID()]
-	if !ok {
+	if !ok || !lb.Remove(u) {
 		return
 	}
-	if lb.Remove(u) {
+	if lb.Empty() {
 		delete(m.localUpstreams, u.EndpointID())
 
 		m.metrics.RegisteredEndpoints.Dec()
@@ -184,14 +193,14 @@ func (m *LoadBalancedManager) RemoveConn(u Upstream) {
 	m.cluster.RemoveLocalEndpoint(u.EndpointID())
 
 	if group := u.Group(); group != "" {
-		key := groupKey(u.EndpointID(), group)
+		key := cluster.GroupKey(u.EndpointID(), group)
 
-		if lb, ok := m.localGroups[key]; ok {
-			if lb.Remove(u) {
+		if lb, ok := m.localGroups[key]; ok && lb.Remove(u) {
+			if lb.Empty() {
 				delete(m.localGroups, key)
 			}
 
-			m.cluster.RemoveLocalEndpoint(key)
+			m.cluster.RemoveLocalGroup(u.EndpointID(), group)
 		}
 	}
 
@@ -232,17 +241,6 @@ func (m *LoadBalancedManager) Upstreams(endpointID string) []ConnMetadata {
 		upstreams = append(upstreams, conn.Metadata())
 	}
 	return upstreams
-}
-
-// groupKey is the route a group of upstreams within an endpoint is registered
-// under.
-//
-// Groups are registered as routes of their own so a group can be looked up on
-// a remote node, as the cluster only gossips endpoint names and their listener
-// counts. '/' is used as the separator as an endpoint ID can never contain
-// one: it comes from either a host name or a path segment.
-func groupKey(endpointID string, group string) string {
-	return endpointID + "/" + group
 }
 
 func (m *LoadBalancedManager) Metrics() *Metrics {

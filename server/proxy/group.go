@@ -36,6 +36,18 @@ func GroupFromRequest(r *http.Request) string {
 	return unescaped
 }
 
+// withoutGroupPath returns a shallow copy of the request with the group prefix
+// removed from its path, leaving the given request unchanged (like
+// http.StripPrefix).
+func withoutGroupPath(r *http.Request) *http.Request {
+	r2 := new(http.Request)
+	*r2 = *r
+	r2.URL = new(url.URL)
+	*r2.URL = *r.URL
+	stripGroupPath(r2.URL)
+	return r2
+}
+
 // stripGroupPath removes the group prefix from the URL, leaving the path the
 // upstream service expects.
 func stripGroupPath(u *url.URL) {

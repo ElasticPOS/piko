@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/andydunstall/piko/pkg/backoff"
+	"github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/websocket"
 	"github.com/andydunstall/piko/pkg/yamuxconn"
 )
@@ -72,7 +73,7 @@ type Upstream struct {
 	// among all of its clients, grouped or not.
 	//
 	// Limited to the unreserved URL characters (RFC 3986), as the group is
-	// part of the route. The server rejects the connection otherwise.
+	// part of the route. Listening fails otherwise.
 	//
 	// Defaults to no group (optional).
 	Group string
@@ -120,6 +121,10 @@ type Upstream struct {
 
 // Listen listens for connections on the given endpoint.
 func (u *Upstream) Listen(ctx context.Context, endpointID string) (Listener, error) {
+	if err := group.Validate(u.Group); err != nil {
+		return nil, err
+	}
+
 	ln := newListener(endpointID, u, u.logger())
 	if err := ln.connect(ctx); err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -137,6 +142,10 @@ func (u *Upstream) Listen(ctx context.Context, endpointID string) (Listener, err
 func (u *Upstream) ListenAndForward(
 	ctx context.Context, endpointID string, addr string,
 ) (*Forwarder, error) {
+	if err := group.Validate(u.Group); err != nil {
+		return nil, err
+	}
+
 	ln := newListener(endpointID, u, u.logger())
 	if err := ln.connect(ctx); err != nil {
 		return nil, fmt.Errorf("connect: %w", err)

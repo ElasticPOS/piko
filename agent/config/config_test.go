@@ -18,6 +18,16 @@ func TestConfig_Default(t *testing.T) {
 	assert.NoError(t, conf.Validate())
 }
 
+// Tests the group is validated up front, rather than when connecting.
+func TestConfig_ValidateGroup(t *testing.T) {
+	conf := Default()
+	conf.Group = "branch-1"
+	assert.NoError(t, conf.Validate())
+
+	conf.Group = "branch/1"
+	assert.ErrorContains(t, conf.Validate(), "group")
+}
+
 func TestListenerConfig_URL(t *testing.T) {
 	tests := []struct {
 		addr string

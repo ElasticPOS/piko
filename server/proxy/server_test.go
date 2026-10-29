@@ -536,6 +536,37 @@ func TestServer_TCP(t *testing.T) {
 		assert.Equal(t, 3, n)
 	})
 
+	// Tests a connection addressed to an invalid group is rejected rather
+	// than looked up.
+	t.Run("invalid group", func(t *testing.T) {
+		server := NewServer(
+			&fakeManager{
+				handler: func(string, string, bool) (upstream.Upstream, bool) {
+					t.Fatal("unexpected select")
+					return nil, false
+				},
+			},
+			config.Default().Proxy,
+			nil,
+			nil,
+			nil,
+			log.NewNopLogger(),
+		)
+
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		assert.NoError(t, err)
+		defer ln.Close()
+
+		// nolint
+		go server.Serve(ln)
+
+		_, err = websocket.Dial(
+			context.TODO(),
+			"ws://"+ln.Addr().String()+"/_piko/v1/tcp/my-endpoint?group=branch%201",
+		)
+		assert.ErrorContains(t, err, "400: invalid group")
+	})
+
 	// Tests a connection forwarded to another node keeps the group, as that
 	// node selects the upstream itself.
 	t.Run("group forward", func(t *testing.T) {
@@ -865,6 +896,24 @@ func TestEndpointIDFromRequest(t *testing.T) {
 			Header: header,
 		})
 		assert.Equal(t, "my-endpoint", endpointID)
+	})
+
+	// No upstream can listen on an endpoint ID containing '/', so the header
+	// is ignored in favour of the host.
+	t.Run("x-piko-endpoint header with separator", func(t *testing.T) {
+		header := make(http.Header)
+		header.Add("x-piko-endpoint", "my-endpoint/branch-1")
+		endpointID := EndpointIDFromRequest(&http.Request{
+			Host:   "another-endpoint.piko.com:9000",
+			Header: header,
+		})
+		assert.Equal(t, "another-endpoint", endpointID)
+
+		endpointID = EndpointIDFromRequest(&http.Request{
+			Host:   "localhost:9000",
+			Header: header,
+		})
+		assert.Equal(t, "", endpointID)
 	})
 
 	t.Run("ip address", func(t *testing.T) {

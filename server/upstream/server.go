@@ -20,6 +20,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/andydunstall/piko/pkg/auth"
+	pikogroup "github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/log"
 	"github.com/andydunstall/piko/pkg/middleware"
 	pikowebsocket "github.com/andydunstall/piko/pkg/websocket"
@@ -203,15 +204,16 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	// its members alone. Unlike the name the group is part of a routing key,
 	// so it's rejected rather than sanitized when it can't be one.
 	group := c.Query("group")
-	if !validGroup(group) {
+	if err := pikogroup.Validate(group); err != nil {
 		s.logger.Warn(
 			"invalid group",
 			zap.String("endpoint-id", endpointID),
 			zap.String("group", group),
+			zap.Error(err),
 		)
 		c.JSON(
 			http.StatusBadRequest,
-			gin.H{"error": "invalid group"},
+			gin.H{"error": "invalid group: " + err.Error()},
 		)
 		return
 	}
@@ -300,38 +302,6 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 // maxNameLen is the maximum length of a client supplied upstream name, in
 // runes.
 const maxNameLen = 64
-
-// maxGroupLen is the maximum length of a client supplied group, in bytes.
-const maxGroupLen = 64
-
-// validGroup returns whether the client supplied group can be used as a
-// routing key.
-//
-// A group is addressed by a '/_g/<group>/' request path prefix and registered
-// with the cluster as '<endpoint ID>/<group>', so it's limited to the
-// unreserved URL characters (RFC 3986) to keep both unambiguous. '.' and '..'
-// are excluded as they aren't path segments a request can address.
-//
-// An empty group is valid and means the upstream isn't grouped.
-func validGroup(group string) bool {
-	if len(group) > maxGroupLen {
-		return false
-	}
-	if group == "." || group == ".." {
-		return false
-	}
-	for _, r := range group {
-		switch {
-		case r >= 'a' && r <= 'z':
-		case r >= 'A' && r <= 'Z':
-		case r >= '0' && r <= '9':
-		case r == '-', r == '_', r == '.', r == '~':
-		default:
-			return false
-		}
-	}
-	return true
-}
 
 // sanitizeName cleans up the client supplied upstream name, which is echoed
 // back by the status API and written to the logs.

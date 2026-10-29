@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 
+	"github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/websocket"
 )
 
@@ -71,6 +72,9 @@ func (d *Dialer) Dial(
 	options := dialOptions{}
 	for _, o := range opts {
 		o.apply(&options)
+	}
+	if err := group.Validate(options.group); err != nil {
+		return nil, err
 	}
 
 	// Dialing is simply opening a WebSocket connection to the target endpoint,

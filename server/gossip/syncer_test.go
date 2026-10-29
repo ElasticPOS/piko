@@ -464,3 +464,68 @@ func TestSyncer_RemoteNodeUnreachable(t *testing.T) {
 		assert.Equal(t, localNode, m.LocalNode())
 	})
 }
+
+// Tests groups are gossiped under a key of their own rather than as
+// endpoints.
+func TestSyncer_Groups(t *testing.T) {
+	localNode := &cluster.Node{
+		ID:        "local",
+		ProxyAddr: "10.26.104.56:8000",
+		AdminAddr: "10.26.104.56:8001",
+	}
+	m := cluster.NewState(localNode.Copy(), log.NewNopLogger())
+	m.AddLocalEndpoint("my-endpoint")
+	m.AddLocalGroup("my-endpoint", "branch-1")
+
+	sync := newSyncer(m, log.NewNopLogger())
+
+	gossiper := &fakeGossiper{}
+	sync.Sync(gossiper)
+
+	assert.Equal(
+		t,
+		[]upsert{
+			{"proxy_addr", "10.26.104.56:8000"},
+			{"admin_addr", "10.26.104.56:8001"},
+			{"endpoint:my-endpoint", "1"},
+			{"group:my-endpoint/branch-1", "1"},
+		},
+		gossiper.upserts,
+	)
+
+	m.AddLocalGroup("my-endpoint", "branch-1")
+	assert.Equal(
+		t,
+		upsert{"group:my-endpoint/branch-1", "2"},
+		gossiper.upserts[len(gossiper.upserts)-1],
+	)
+	m.RemoveLocalGroup("my-endpoint", "branch-1")
+	m.RemoveLocalGroup("my-endpoint", "branch-1")
+	assert.Equal(
+		t,
+		"group:my-endpoint/branch-1",
+		gossiper.deletes[len(gossiper.deletes)-1],
+	)
+
+	// A remote node's groups are kept apart from its endpoints, both while
+	// it's pending and once it's in the cluster.
+	sync.OnJoin("remote")
+	sync.OnUpsertKey("remote", "group:my-endpoint/branch-1", "3")
+	sync.OnUpsertKey("remote", "proxy_addr", "10.26.104.98:8000")
+	sync.OnUpsertKey("remote", "admin_addr", "10.26.104.98:8001")
+	sync.OnUpsertKey("remote", "endpoint:my-endpoint", "5")
+	sync.OnUpsertKey("remote", "group:my-endpoint/branch-2", "2")
+
+	node, ok := m.Node("remote")
+	assert.True(t, ok)
+	assert.Equal(t, map[string]int{"my-endpoint": 5}, node.Endpoints)
+	assert.Equal(t, map[string]int{
+		"my-endpoint/branch-1": 3,
+		"my-endpoint/branch-2": 2,
+	}, node.Groups)
+
+	sync.OnDeleteKey("remote", "group:my-endpoint/branch-1")
+	node, _ = m.Node("remote")
+	assert.Equal(t, map[string]int{"my-endpoint/branch-2": 2}, node.Groups)
+	assert.Equal(t, map[string]int{"my-endpoint": 5}, node.Endpoints)
+}

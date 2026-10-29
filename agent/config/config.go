@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/log"
 )
 
@@ -491,6 +492,10 @@ func (c *Config) Validate() error {
 			}
 			return fmt.Errorf("listener: %w", err)
 		}
+	}
+
+	if err := group.Validate(c.Group); err != nil {
+		return err
 	}
 
 	if err := c.Connect.Validate(); err != nil {

@@ -93,8 +93,12 @@ func (p *HTTPProxy) ServeHTTP(
 	// it's stripped once the request reaches the node holding the upstream.
 	// When forwarding to another node the prefix is kept, as that node selects
 	// the upstream itself.
+	//
+	// The prefix is stripped from a copy of the request, as the access log
+	// reads the original once the request completes and should show the path
+	// the client asked for.
 	if !upstream.Forward() {
-		stripGroupPath(r.URL)
+		r = withoutGroupPath(r)
 	}
 
 	p.ServeHTTPWithUpstream(w, r, endpointID, upstream)
