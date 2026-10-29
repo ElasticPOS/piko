@@ -20,6 +20,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/andydunstall/piko/pkg/auth"
+	pikogroup "github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/log"
 	"github.com/andydunstall/piko/pkg/middleware"
 	pikowebsocket "github.com/andydunstall/piko/pkg/websocket"
@@ -198,6 +199,25 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	// unverified, so it's sanitized before being stored.
 	name := sanitizeName(c.Query("name"))
 
+	// The group narrows which requests reach this upstream: once a client
+	// joins a group, requests addressed to that group are load balanced among
+	// its members alone. Unlike the name the group is part of a routing key,
+	// so it's rejected rather than sanitized when it can't be one.
+	group := c.Query("group")
+	if err := pikogroup.Validate(group); err != nil {
+		s.logger.Warn(
+			"invalid group",
+			zap.String("endpoint-id", endpointID),
+			zap.String("group", group),
+			zap.Error(err),
+		)
+		c.JSON(
+			http.StatusBadRequest,
+			gin.H{"error": "invalid group: " + err.Error()},
+		)
+		return
+	}
+
 	wsConn, err := s.websocketUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		// Upgrade replies to the client so nothing else to do.
@@ -210,6 +230,7 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	s.logger.Info(
 		"upstream connected",
 		zap.String("endpoint-id", endpointID),
+		zap.String("group", group),
 		zap.String("name", name),
 		zap.String("client-ip", c.ClientIP()),
 		zap.String("tenant-id", tenantID),
@@ -217,6 +238,7 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	defer s.logger.Info(
 		"upstream disconnected",
 		zap.String("endpoint-id", endpointID),
+		zap.String("group", group),
 		zap.String("name", name),
 		zap.String("client-ip", c.ClientIP()),
 		zap.String("tenant-id", tenantID),
@@ -248,7 +270,7 @@ func (s *Server) upstreamRoute(c *gin.Context) {
 	s.addSession(sess)
 	defer s.removeSession(sess)
 
-	upstream := NewConnUpstream(endpointID, sess, name, c.ClientIP())
+	upstream := NewConnUpstream(endpointID, group, sess, name, c.ClientIP())
 
 	s.upstreams.AddConn(upstream)
 	defer s.upstreams.RemoveConn(upstream)

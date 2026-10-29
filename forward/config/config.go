@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/log"
 )
 
@@ -21,6 +22,14 @@ type PortConfig struct {
 
 	// EndpointID is the endpoint ID to connect to.
 	EndpointID string `json:"endpoint_id" yaml:"endpoint_id"`
+
+	// Group is the group of upstreams within the endpoint to connect to, such
+	// as the branch the machines sit in.
+	//
+	// Connections are load balanced among the upstreams in that group alone.
+	//
+	// Defaults to connecting to any upstream on the endpoint, grouped or not.
+	Group string `json:"group" yaml:"group"`
 }
 
 // Host parses the given upstream address into a host and port. Return false if
@@ -52,6 +61,9 @@ func (c *PortConfig) Validate() error {
 	}
 	if c.EndpointID == "" {
 		return fmt.Errorf("missing endpoint id")
+	}
+	if err := group.Validate(c.Group); err != nil {
+		return err
 	}
 	return nil
 }

@@ -50,6 +50,7 @@ func (s *syncer) Sync(gossiper gossiper) {
 	s.gossiper = gossiper
 
 	s.clusterState.OnLocalEndpointUpdate(s.onLocalEndpointUpdate)
+	s.clusterState.OnLocalGroupUpdate(s.onLocalGroupUpdate)
 
 	localNode := s.clusterState.LocalNode()
 	// First add immutable fields.
@@ -57,7 +58,11 @@ func (s *syncer) Sync(gossiper gossiper) {
 	s.gossiper.UpsertLocal("admin_addr", localNode.AdminAddr)
 	// Finally add mutable fields.
 	for endpointID, listeners := range localNode.Endpoints {
-		key := "endpoint:" + endpointID
+		key := endpointKeyPrefix + endpointID
+		s.gossiper.UpsertLocal(key, strconv.Itoa(listeners))
+	}
+	for groupKey, listeners := range localNode.Groups {
+		key := groupKeyPrefix + groupKey
 		s.gossiper.UpsertLocal(key, strconv.Itoa(listeners))
 	}
 }
@@ -268,9 +273,11 @@ func (s *syncer) OnUpsertKey(nodeID, key, value string) {
 
 	// First check if the node is already in the cluster. Only check mutable
 	// fields.
-	if strings.HasPrefix(key, "endpoint:") {
-		endpointID, _ := strings.CutPrefix(key, "endpoint:")
-		listeners, err := strconv.Atoi(value)
+	route, routeKey, isRoute := parseRouteKey(key)
+	var listeners int
+	if isRoute {
+		var err error
+		listeners, err = strconv.Atoi(value)
 		if err != nil {
 			s.logger.Error(
 				"node upsert state; invalid endpoint listeners",
@@ -280,7 +287,11 @@ func (s *syncer) OnUpsertKey(nodeID, key, value string) {
 			)
 			return
 		}
-		if s.clusterState.UpdateRemoteEndpoint(nodeID, endpointID, listeners) {
+		if route == groupKeyPrefix {
+			if s.clusterState.UpdateRemoteGroup(nodeID, routeKey, listeners) {
+				return
+			}
+		} else if s.clusterState.UpdateRemoteEndpoint(nodeID, routeKey, listeners) {
 			return
 		}
 	}
@@ -301,22 +312,16 @@ func (s *syncer) OnUpsertKey(nodeID, key, value string) {
 		node.ProxyAddr = value
 	} else if key == "admin_addr" {
 		node.AdminAddr = value
-	} else if strings.HasPrefix(key, "endpoint:") {
-		endpointID, _ := strings.CutPrefix(key, "endpoint:")
-		listeners, err := strconv.Atoi(value)
-		if err != nil {
-			s.logger.Error(
-				"node upsert state; invalid endpoint listeners",
-				zap.String("node-id", nodeID),
-				zap.String("listeners", value),
-				zap.Error(err),
-			)
-			return
+	} else if isRoute && route == groupKeyPrefix {
+		if node.Groups == nil {
+			node.Groups = make(map[string]int)
 		}
+		node.Groups[routeKey] = listeners
+	} else if isRoute {
 		if node.Endpoints == nil {
 			node.Endpoints = make(map[string]int)
 		}
-		node.Endpoints[endpointID] = listeners
+		node.Endpoints[routeKey] = listeners
 	} else {
 		s.logger.Error(
 			"node upsert state; unsupported key",
@@ -363,8 +368,9 @@ func (s *syncer) OnDeleteKey(nodeID, key string) {
 		return
 	}
 
-	// Only endpoint state can be deleted.
-	if !strings.HasPrefix(key, "endpoint:") {
+	// Only endpoint and group state can be deleted.
+	route, routeKey, isRoute := parseRouteKey(key)
+	if !isRoute {
 		s.logger.Error(
 			"node delete state; unsupported key",
 			zap.String("node-id", nodeID),
@@ -373,8 +379,13 @@ func (s *syncer) OnDeleteKey(nodeID, key string) {
 		return
 	}
 
-	endpointID, _ := strings.CutPrefix(key, "endpoint:")
-	if s.clusterState.RemoveRemoteEndpoint(nodeID, endpointID) {
+	var removed bool
+	if route == groupKeyPrefix {
+		removed = s.clusterState.RemoveRemoteGroup(nodeID, routeKey)
+	} else {
+		removed = s.clusterState.RemoveRemoteEndpoint(nodeID, routeKey)
+	}
+	if removed {
 		s.logger.Debug(
 			"node delete state; cluster updated",
 			zap.String("node-id", nodeID),
@@ -396,8 +407,10 @@ func (s *syncer) OnDeleteKey(nodeID, key string) {
 		return
 	}
 
-	if node.Endpoints != nil {
-		delete(node.Endpoints, endpointID)
+	if route == groupKeyPrefix {
+		delete(node.Groups, routeKey)
+	} else {
+		delete(node.Endpoints, routeKey)
 	}
 
 	s.logger.Debug(
@@ -408,13 +421,51 @@ func (s *syncer) OnDeleteKey(nodeID, key string) {
 }
 
 func (s *syncer) onLocalEndpointUpdate(endpointID string) {
-	key := "endpoint:" + endpointID
-	listeners := s.clusterState.LocalEndpointListeners(endpointID)
+	s.syncLocalRoute(
+		endpointKeyPrefix+endpointID,
+		s.clusterState.LocalEndpointListeners(endpointID),
+	)
+}
+
+func (s *syncer) onLocalGroupUpdate(groupKey string) {
+	s.syncLocalRoute(
+		groupKeyPrefix+groupKey,
+		s.clusterState.LocalGroupListeners(groupKey),
+	)
+}
+
+func (s *syncer) syncLocalRoute(key string, listeners int) {
 	if listeners > 0 {
 		s.gossiper.UpsertLocal(key, strconv.Itoa(listeners))
 	} else {
 		s.gossiper.DeleteLocal(key)
 	}
+}
+
+const (
+	// endpointKeyPrefix prefixes the gossip key of an active endpoint, whose
+	// value is the number of listeners on the endpoint.
+	endpointKeyPrefix = "endpoint:"
+
+	// groupKeyPrefix prefixes the gossip key of an active group within an
+	// endpoint (see cluster.GroupKey), whose value is the number of listeners
+	// in the group.
+	//
+	// Groups have a key of their own, rather than being gossiped as
+	// endpoints, as their listeners are also counted under their endpoint.
+	groupKeyPrefix = "group:"
+)
+
+// parseRouteKey splits a gossip key for an endpoint or group into its prefix
+// and the endpoint ID or group key. Returns false if the key isn't for an
+// endpoint or group.
+func parseRouteKey(key string) (prefix string, routeKey string, ok bool) {
+	for _, prefix := range []string{endpointKeyPrefix, groupKeyPrefix} {
+		if routeKey, ok := strings.CutPrefix(key, prefix); ok {
+			return prefix, routeKey, true
+		}
+	}
+	return "", "", false
 }
 
 var _ gossip.Watcher = &syncer{}

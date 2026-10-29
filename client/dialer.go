@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 
+	"github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/websocket"
 )
 
@@ -34,20 +35,59 @@ type Dialer struct {
 	TLSConfig *tls.Config
 }
 
+type dialOptions struct {
+	group string
+}
+
+// DialOption configures how a connection to an endpoint is opened.
+type DialOption interface {
+	apply(*dialOptions)
+}
+
+type groupOption string
+
+func (o groupOption) apply(opts *dialOptions) {
+	opts.group = string(o)
+}
+
+// WithGroup connects to the given group of upstreams within the endpoint,
+// such as the branch the machines sit in.
+//
+// The connection is load balanced among the upstreams in that group alone. If
+// no upstream has joined the group the connection is refused, rather than
+// falling back to the endpoint's other upstreams.
+//
+// Defaults to connecting to any upstream on the endpoint, grouped or not.
+func WithGroup(group string) DialOption {
+	return groupOption(group)
+}
+
 // Dial opens a TCP connection to the endpoint with the given ID and
 // returns a [net.Conn].
-func (d *Dialer) Dial(ctx context.Context, endpointID string) (net.Conn, error) {
+func (d *Dialer) Dial(
+	ctx context.Context,
+	endpointID string,
+	opts ...DialOption,
+) (net.Conn, error) {
+	options := dialOptions{}
+	for _, o := range opts {
+		o.apply(&options)
+	}
+	if err := group.Validate(options.group); err != nil {
+		return nil, err
+	}
+
 	// Dialing is simply opening a WebSocket connection to the target endpoint,
 	// then wrapping the WebSocket in a net.Conn.
 	return websocket.Dial(
 		ctx,
-		d.dialURL(endpointID),
+		d.dialURL(endpointID, options.group),
 		websocket.WithToken(d.Token),
 		websocket.WithTLSConfig(d.TLSConfig),
 	)
 }
 
-func (d *Dialer) dialURL(endpointID string) string {
+func (d *Dialer) dialURL(endpointID string, group string) string {
 	var dialURL url.URL
 	if d.URL == nil {
 		dialURL = url.URL{
@@ -60,6 +100,14 @@ func (d *Dialer) dialURL(endpointID string) string {
 
 	// Add the dial path to the URL.
 	dialURL.Path += "/_piko/v1/tcp/" + endpointID
+
+	// Unlike HTTP, which addresses a group with a path prefix, there is no
+	// request to carry the group so it's named by the dial URL.
+	if group != "" {
+		query := dialURL.Query()
+		query.Set("group", group)
+		dialURL.RawQuery = query.Encode()
+	}
 
 	// Set the scheme to WebSocket.
 	if dialURL.Scheme == "http" {

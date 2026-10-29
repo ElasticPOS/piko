@@ -1250,6 +1250,7 @@
       else body = conns.map((c) => `
         <div class="client">
           <span class="name${c.name ? "" : " unnamed"}">${esc(c.name || "unnamed")}</span>
+          ${c.group ? `<span class="chip">${esc(c.group)}</span>` : ""}
           <span class="meta">${esc(c.addr || "")}${
             c.connected_at ? "<br>connected " + ago(c.connected_at) : ""}</span>
         </div>`).join("");

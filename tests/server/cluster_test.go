@@ -72,6 +72,78 @@ func TestCluster_Proxy(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 
+	// Tests proxying to a group of upstreams held by another node.
+	t.Run("group", func(t *testing.T) {
+		manager := cluster.NewManager()
+		defer manager.Close()
+
+		manager.Update(&config.Config{
+			Nodes: 3,
+		})
+
+		// A group is gossiped alongside its endpoint, so node 2 learns about
+		// the group within the endpoint.
+		remoteGroupCh := make(chan string, 8)
+		manager.Nodes()[1].ClusterState().OnRemoteGroupUpdate(
+			func(_ string, key string) {
+				remoteGroupCh <- key
+			},
+		)
+
+		// Add an upstream listener in group 'branch-1' whose HTTP server
+		// echoes the path it was asked for.
+
+		upstream := client.Upstream{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   manager.Nodes()[0].UpstreamAddr(),
+			},
+			Group: "branch-1",
+		}
+		ln, err := upstream.Listen(context.TODO(), "my-endpoint")
+		assert.NoError(t, err)
+
+		server := httptest.NewUnstartedServer(http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if _, err := w.Write([]byte(r.URL.Path)); err != nil {
+					panic("write bytes: " + err.Error())
+				}
+			},
+		))
+		server.Listener = ln
+		go server.Start()
+		defer server.Close()
+
+		// Wait for node 2 to learn about the group.
+		for key := range remoteGroupCh {
+			if key == "my-endpoint/branch-1" {
+				break
+			}
+		}
+
+		// Send a request to node 2, which forwards it to the node holding the
+		// group.
+
+		req, _ := http.NewRequest(
+			http.MethodGet,
+			"http://"+manager.Nodes()[1].ProxyAddr()+"/_g/branch-1/foo",
+			nil,
+		)
+		req.Header.Add("x-piko-endpoint", "my-endpoint")
+		httpClient := &http.Client{}
+		resp, err := httpClient.Do(req)
+		assert.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// The group prefix is stripped by the node holding the upstream, not
+		// by the node that forwarded the request.
+		body, err := io.ReadAll(resp.Body)
+		assert.NoError(t, err)
+		assert.Equal(t, "/foo", string(body))
+	})
+
 	t.Run("tcp", func(t *testing.T) {
 		manager := cluster.NewManager()
 		defer manager.Close()

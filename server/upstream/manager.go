@@ -22,7 +22,11 @@ type Manager interface {
 	// If there are no upstreams connected for the endpoint, and 'allowForward'
 	// is true, it will look for another node in the cluster that has an
 	// upstream connection for the endpoint and use that node as the upstream.
-	Select(endpointID string, allowForward bool) (Upstream, bool)
+	//
+	// If 'group' is given, only upstreams that registered themselves in that
+	// group are considered. If it's empty, any upstream for the endpoint may
+	// be selected, whether it's grouped or not.
+	Select(endpointID string, group string, allowForward bool) (Upstream, bool)
 
 	// AddConn adds a local upstream connection.
 	AddConn(u Upstream)
@@ -42,18 +46,22 @@ func (lb *loadBalancer) Add(u Upstream) {
 	lb.upstreams = append(lb.upstreams, u)
 }
 
+// Remove removes the upstream, returning false if it wasn't found.
 func (lb *loadBalancer) Remove(u Upstream) bool {
 	for i := 0; i != len(lb.upstreams); i++ {
 		if lb.upstreams[i] != u {
 			continue
 		}
 		lb.upstreams = append(lb.upstreams[:i], lb.upstreams[i+1:]...)
-		if len(lb.upstreams) == 0 {
-			return true
+		if len(lb.upstreams) > 0 {
+			lb.nextIndex %= len(lb.upstreams)
 		}
-		lb.nextIndex %= len(lb.upstreams)
-		return false
+		return true
 	}
+	return false
+}
+
+func (lb *loadBalancer) Empty() bool {
 	return len(lb.upstreams) == 0
 }
 
@@ -71,6 +79,11 @@ func (lb *loadBalancer) Next() Upstream {
 type LoadBalancedManager struct {
 	localUpstreams map[string]*loadBalancer
 
+	// localGroups contains the grouped subset of localUpstreams, keyed by
+	// cluster.GroupKey. Grouped upstreams appear in both, as an ungrouped request must
+	// still reach them.
+	localGroups map[string]*loadBalancer
+
 	mu sync.Mutex
 
 	cluster *cluster.State
@@ -83,17 +96,28 @@ type LoadBalancedManager struct {
 func NewLoadBalancedManager(cluster *cluster.State, proxyClientTLSConfig *tls.Config) *LoadBalancedManager {
 	return &LoadBalancedManager{
 		localUpstreams: make(map[string]*loadBalancer),
+		localGroups:    make(map[string]*loadBalancer),
 		cluster:        cluster,
 		tlsConfig:      proxyClientTLSConfig,
 		metrics:        NewMetrics(),
 	}
 }
 
-func (m *LoadBalancedManager) Select(endpointID string, allowRemote bool) (Upstream, bool) {
+func (m *LoadBalancedManager) Select(
+	endpointID string,
+	group string,
+	allowRemote bool,
+) (Upstream, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	lb, ok := m.localUpstreams[endpointID]
+	var lb *loadBalancer
+	var ok bool
+	if group == "" {
+		lb, ok = m.localUpstreams[endpointID]
+	} else {
+		lb, ok = m.localGroups[cluster.GroupKey(endpointID, group)]
+	}
 	if ok {
 		m.metrics.UpstreamRequestsTotal.Inc()
 		return lb.Next(), true
@@ -102,14 +126,19 @@ func (m *LoadBalancedManager) Select(endpointID string, allowRemote bool) (Upstr
 		return nil, false
 	}
 
-	node, ok := m.cluster.LookupEndpoint(endpointID)
+	var node *cluster.Node
+	if group == "" {
+		node, ok = m.cluster.LookupEndpoint(endpointID)
+	} else {
+		node, ok = m.cluster.LookupGroup(endpointID, group)
+	}
 	if !ok {
 		return nil, false
 	}
 	m.metrics.RemoteRequestsTotal.With(prometheus.Labels{
 		"node_id": node.ID,
 	}).Inc()
-	return NewNodeUpstream(endpointID, node, m.tlsConfig), true
+	return NewNodeUpstream(endpointID, group, node, m.tlsConfig), true
 }
 
 func (m *LoadBalancedManager) AddConn(u Upstream) {
@@ -128,24 +157,52 @@ func (m *LoadBalancedManager) AddConn(u Upstream) {
 
 	m.cluster.AddLocalEndpoint(u.EndpointID())
 
+	if group := u.Group(); group != "" {
+		key := cluster.GroupKey(u.EndpointID(), group)
+
+		lb, ok := m.localGroups[key]
+		if !ok {
+			lb = &loadBalancer{}
+		}
+		lb.Add(u)
+		m.localGroups[key] = lb
+
+		m.cluster.AddLocalGroup(u.EndpointID(), group)
+	}
+
 	m.metrics.ConnectedUpstreams.Inc()
 }
 
+// RemoveConn removes the upstream connection. Removing an upstream that was
+// already removed has no effect, as an upstream may be removed both when it
+// disconnects and when it refuses a connection (see ErrGone).
 func (m *LoadBalancedManager) RemoveConn(u Upstream) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	lb, ok := m.localUpstreams[u.EndpointID()]
-	if !ok {
+	if !ok || !lb.Remove(u) {
 		return
 	}
-	if lb.Remove(u) {
+	if lb.Empty() {
 		delete(m.localUpstreams, u.EndpointID())
 
 		m.metrics.RegisteredEndpoints.Dec()
 	}
 
 	m.cluster.RemoveLocalEndpoint(u.EndpointID())
+
+	if group := u.Group(); group != "" {
+		key := cluster.GroupKey(u.EndpointID(), group)
+
+		if lb, ok := m.localGroups[key]; ok && lb.Remove(u) {
+			if lb.Empty() {
+				delete(m.localGroups, key)
+			}
+
+			m.cluster.RemoveLocalGroup(u.EndpointID(), group)
+		}
+	}
 
 	m.metrics.ConnectedUpstreams.Dec()
 }

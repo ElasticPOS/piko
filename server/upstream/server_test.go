@@ -32,7 +32,7 @@ func newFakeManager() *fakeManager {
 	}
 }
 
-func (m *fakeManager) Select(_ string, _ bool) (Upstream, bool) {
+func (m *fakeManager) Select(_ string, _ string, _ bool) (Upstream, bool) {
 	return nil, false
 }
 
@@ -111,6 +111,55 @@ func TestServer_Register(t *testing.T) {
 		assert.Equal(t, "my-host", metadata.Name)
 		assert.Equal(t, "127.0.0.1", metadata.Addr)
 		assert.NotZero(t, metadata.ConnectedAt)
+	})
+
+	// Tests the client supplied group is recorded against the upstream.
+	t.Run("group", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		manager := newFakeManager()
+
+		s := NewServer(manager, nil, nil, nil, config.UpstreamConfig{}, config.StreamConfig{MaxWindowSize: 256 * 1024}, log.NewNopLogger())
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		url := fmt.Sprintf(
+			"ws://%s/piko/v1/upstream/my-endpoint?group=branch-1",
+			ln.Addr().String(),
+		)
+		conn, err := websocket.Dial(context.TODO(), url)
+		require.NoError(t, err)
+		defer conn.Close()
+
+		addedUpstream := <-manager.addConnCh
+		assert.Equal(t, "branch-1", addedUpstream.Group())
+		assert.Equal(t, "branch-1", addedUpstream.(*ConnUpstream).Metadata().Group)
+	})
+
+	// Tests a group that can't be part of a route is rejected, rather than
+	// being sanitized into a different group than the client asked for.
+	t.Run("invalid group", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+
+		manager := newFakeManager()
+
+		s := NewServer(manager, nil, nil, nil, config.UpstreamConfig{}, config.StreamConfig{MaxWindowSize: 256 * 1024}, log.NewNopLogger())
+		go func() {
+			require.NoError(t, s.Serve(ln))
+		}()
+		defer s.Shutdown(context.TODO())
+
+		url := fmt.Sprintf(
+			"ws://%s/piko/v1/upstream/my-endpoint?group=%s",
+			ln.Addr().String(),
+			neturl.QueryEscape("branch/1"),
+		)
+		_, err = websocket.Dial(context.TODO(), url)
+		require.ErrorContains(t, err, "400: invalid group")
 	})
 
 	// Tests the server closes upstream connections when it is shutdown.

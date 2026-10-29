@@ -9,6 +9,18 @@ var (
 	alphaNumericChars = []byte("abcdefghijklmnopqrstuvwxyz1234567890")
 )
 
+// routeKind is the kind of route a node advertises its upstream listeners
+// under.
+type routeKind int
+
+const (
+	// endpointRoute routes to any upstream on an endpoint.
+	endpointRoute routeKind = iota
+	// groupRoute routes to the upstreams in a group within an endpoint.
+	groupRoute
+	numRouteKinds
+)
+
 // NodeStatus contains the known status of a node.
 type NodeStatus string
 
@@ -50,23 +62,58 @@ type Node struct {
 	// This maps the endpoint ID to the number of known listeners for that
 	// endpoint.
 	Endpoints map[string]int `json:"endpoints"`
+
+	// Groups contains the known active groups of upstreams within endpoints on
+	// the node (groups with at least one upstream listener).
+	//
+	// This maps the group's key (see GroupKey) to the number of known
+	// listeners in that group. Grouped listeners are also counted under their
+	// endpoint in Endpoints, so groups are kept apart to avoid counting them
+	// twice.
+	Groups map[string]int `json:"groups,omitempty"`
+}
+
+// GroupKey identifies a group of upstreams within an endpoint.
+//
+// '/' is used as the separator as an endpoint ID can never contain one: it
+// comes from either a host name or a path segment.
+func GroupKey(endpointID string, group string) string {
+	return endpointID + "/" + group
 }
 
 func (n *Node) Copy() *Node {
-	var endpoints map[string]int
-	if len(n.Endpoints) > 0 {
-		endpoints = make(map[string]int)
-		for endpointID, listeners := range n.Endpoints {
-			endpoints[endpointID] = listeners
-		}
-	}
 	return &Node{
 		ID:        n.ID,
 		Status:    n.Status,
 		ProxyAddr: n.ProxyAddr,
 		AdminAddr: n.AdminAddr,
-		Endpoints: endpoints,
+		Endpoints: copyRoutes(n.Endpoints),
+		Groups:    copyRoutes(n.Groups),
 	}
+}
+
+// routes returns the node's routes of the given kind, creating the map if
+// 'create' is true and it doesn't exist yet.
+func (n *Node) routes(kind routeKind, create bool) map[string]int {
+	routes := &n.Endpoints
+	if kind == groupRoute {
+		routes = &n.Groups
+	}
+	if *routes == nil && create {
+		*routes = make(map[string]int)
+	}
+	return *routes
+}
+
+func copyRoutes(routes map[string]int) map[string]int {
+	if len(routes) == 0 {
+		return nil
+	}
+	c := make(map[string]int, len(routes))
+	for key, listeners := range routes {
+		c[key] = listeners
+	}
+	return c
 }
 
 func (n *Node) Metadata() *NodeMetadata {

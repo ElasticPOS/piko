@@ -102,7 +102,10 @@ func runForward(conf *config.Config, logger log.Logger) error {
 		}
 
 		forwarder := forward.NewForwarder(
-			portConfig.EndpointID, dialer, logger.WithSubsystem("forwarder"),
+			portConfig.EndpointID,
+			portConfig.Group,
+			dialer,
+			logger.WithSubsystem("forwarder"),
 		)
 
 		group.Add(func() error {

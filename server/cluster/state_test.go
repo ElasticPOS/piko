@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/andydunstall/piko/pkg/log"
 )
@@ -364,4 +365,46 @@ func TestState_LookupEndpoint(t *testing.T) {
 		_, ok := s.LookupEndpoint("my-endpoint-2")
 		assert.False(t, ok)
 	})
+}
+
+// Tests groups are tracked apart from endpoints, so a grouped upstream is
+// only counted once.
+func TestState_Groups(t *testing.T) {
+	s := NewState(&Node{ID: "local"}, log.NewNopLogger())
+
+	var notified []string
+	s.OnLocalGroupUpdate(func(key string) {
+		notified = append(notified, key)
+	})
+
+	s.AddLocalEndpoint("my-endpoint")
+	s.AddLocalGroup("my-endpoint", "branch-1")
+
+	assert.Equal(t, []string{"my-endpoint/branch-1"}, notified)
+	assert.Equal(t, 1, s.LocalGroupListeners("my-endpoint/branch-1"))
+	assert.Equal(t, 1, s.LocalEndpointListeners("my-endpoint"))
+	assert.Equal(t, 0, s.LocalEndpointListeners("my-endpoint/branch-1"))
+	assert.Equal(t, 1, s.AvgConns())
+	assert.Equal(t, 1, s.LocalNode().Metadata().Upstreams)
+
+	s.RemoveLocalGroup("my-endpoint", "branch-1")
+	assert.Equal(t, 0, s.LocalGroupListeners("my-endpoint/branch-1"))
+	assert.Equal(t, 1, s.LocalEndpointListeners("my-endpoint"))
+
+	// Remote groups are looked up by group, not as an endpoint.
+	s.AddNode(&Node{ID: "remote", Status: NodeStatusActive})
+	assert.True(t, s.UpdateRemoteEndpoint("remote", "my-endpoint", 1))
+	assert.True(t, s.UpdateRemoteGroup("remote", "my-endpoint/branch-1", 1))
+
+	node, ok := s.LookupGroup("my-endpoint", "branch-1")
+	require.True(t, ok)
+	assert.Equal(t, "remote", node.ID)
+	_, ok = s.LookupGroup("my-endpoint", "branch-2")
+	assert.False(t, ok)
+	_, ok = s.LookupEndpoint("my-endpoint/branch-1")
+	assert.False(t, ok)
+
+	assert.True(t, s.RemoveRemoteGroup("remote", "my-endpoint/branch-1"))
+	_, ok = s.LookupGroup("my-endpoint", "branch-1")
+	assert.False(t, ok)
 }

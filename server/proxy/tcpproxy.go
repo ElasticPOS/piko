@@ -42,18 +42,24 @@ func NewTCPProxy(
 	}
 }
 
-func (p *TCPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request, endpointID string) {
+func (p *TCPProxy) ServeHTTP(
+	w http.ResponseWriter,
+	r *http.Request,
+	endpointID string,
+	group string,
+) {
 	forwarded := r.Header.Get("x-piko-forward") == "true"
 
 	// If there is a connected upstream, attempt to forward the request to one
 	// of those upstreams. Note this includes remote nodes that are reporting
 	// they have an available upstream. We don't allow multiple hops, so if
 	// forwarded is true we only select from local nodes.
-	u, ok := p.upstreams.Select(endpointID, !forwarded)
+	u, ok := p.upstreams.Select(endpointID, group, !forwarded)
 	if !ok {
 		p.logger.Warn(
 			"no available upstreams",
 			zap.String("endpoint-id", endpointID),
+			zap.String("group", group),
 		)
 
 		_ = errorResponse(w, http.StatusBadGateway, "no available upstreams")

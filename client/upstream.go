@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/andydunstall/piko/pkg/backoff"
+	"github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/websocket"
 	"github.com/andydunstall/piko/pkg/yamuxconn"
 )
@@ -64,6 +65,19 @@ type Upstream struct {
 	// Defaults to no name (optional).
 	Name string
 
+	// Group identifies a set of clients within an endpoint, such as the branch
+	// the machine sits in.
+	//
+	// Requests addressed to the group are load balanced among its clients
+	// alone, whereas requests addressed to the endpoint are load balanced
+	// among all of its clients, grouped or not.
+	//
+	// Limited to the unreserved URL characters (RFC 3986), as the group is
+	// part of the route. Listening fails otherwise.
+	//
+	// Defaults to no group (optional).
+	Group string
+
 	// TLSConfig specifies the TLS configuration to use with the Piko server.
 	//
 	// If nil, the default configuration is used.
@@ -107,6 +121,10 @@ type Upstream struct {
 
 // Listen listens for connections on the given endpoint.
 func (u *Upstream) Listen(ctx context.Context, endpointID string) (Listener, error) {
+	if err := group.Validate(u.Group); err != nil {
+		return nil, err
+	}
+
 	ln := newListener(endpointID, u, u.logger())
 	if err := ln.connect(ctx); err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -124,6 +142,10 @@ func (u *Upstream) Listen(ctx context.Context, endpointID string) (Listener, err
 func (u *Upstream) ListenAndForward(
 	ctx context.Context, endpointID string, addr string,
 ) (*Forwarder, error) {
+	if err := group.Validate(u.Group); err != nil {
+		return nil, err
+	}
+
 	ln := newListener(endpointID, u, u.logger())
 	if err := ln.connect(ctx); err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -231,9 +253,14 @@ func (u *Upstream) listenURL(endpointID string) string {
 	// Add the listen path to the URL.
 	listenURL.Path += "/piko/v1/upstream/" + endpointID
 
-	if u.Name != "" {
+	if u.Name != "" || u.Group != "" {
 		query := listenURL.Query()
-		query.Set("name", u.Name)
+		if u.Name != "" {
+			query.Set("name", u.Name)
+		}
+		if u.Group != "" {
+			query.Set("group", u.Group)
+		}
 		listenURL.RawQuery = query.Encode()
 	}
 

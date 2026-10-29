@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/andydunstall/piko/pkg/auth"
+	pikogroup "github.com/andydunstall/piko/pkg/group"
 	"github.com/andydunstall/piko/pkg/log"
 	"github.com/andydunstall/piko/pkg/middleware"
 	"github.com/andydunstall/piko/server/config"
@@ -147,7 +148,11 @@ func (s *Server) proxyHTTPRoute(c *gin.Context) {
 		}
 	}
 
-	s.httpProxy.ServeHTTP(c.Writer, c.Request, endpointID)
+	// The token scopes the client to an endpoint, not to the groups within it,
+	// so the group is read after the endpoint is authorized.
+	group := GroupFromRequest(c.Request)
+
+	s.httpProxy.ServeHTTP(c.Writer, c.Request, endpointID, group)
 }
 
 func (s *Server) proxyTCPRoute(c *gin.Context) {
@@ -175,7 +180,25 @@ func (s *Server) proxyTCPRoute(c *gin.Context) {
 		}
 	}
 
-	s.tcpProxy.ServeHTTP(c.Writer, c.Request, endpointID)
+	// A TCP connection has no request path to address a group with, so the
+	// group is named by the dial URL instead. Like the endpoint, the group
+	// carries over when the connection is forwarded to another node.
+	group := c.Query("group")
+	if err := pikogroup.Validate(group); err != nil {
+		s.logger.Warn(
+			"invalid group",
+			zap.String("endpoint-id", endpointID),
+			zap.String("group", group),
+			zap.Error(err),
+		)
+		c.JSON(
+			http.StatusBadRequest,
+			gin.H{"error": "invalid group: " + err.Error()},
+		)
+		return
+	}
+
+	s.tcpProxy.ServeHTTP(c.Writer, c.Request, endpointID, group)
 }
 
 func (s *Server) panicRoute(c *gin.Context, err any) {
@@ -192,9 +215,12 @@ func (s *Server) panicRoute(c *gin.Context, err any) {
 //
 // This will check both the 'x-piko-endpoint' header and 'Host' header, where
 // x-piko-endpoint takes precedence.
+//
+// An 'x-piko-endpoint' header containing '/' is ignored, as upstreams
+// register on a path segment so no upstream can ever listen on it.
 func EndpointIDFromRequest(r *http.Request) string {
 	endpointID := r.Header.Get("x-piko-endpoint")
-	if endpointID != "" {
+	if endpointID != "" && !strings.Contains(endpointID, "/") {
 		return endpointID
 	}
 
